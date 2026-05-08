@@ -43,12 +43,5 @@ npm link
 omg --help
 ```
 
-## Publishing
-
-```bash
-npm login
-npm publish
-```
-
 The package is published as the scoped name `@coder11125/omg`. `publishConfig.access`
 is set to `public` in `package.json` so scoped packages publish without `--access public`.
