@@ -21,6 +21,7 @@ That exposes the `omg` binary on your `PATH`.
 ```bash
 omg -v <branch>        # git checkout <branch>
 omg -c "message"       # git add . && git commit -m "message"
+omg remote <url>       # git remote add origin <url> (or set-url if origin exists)
 omg --help             # show help
 omg --version          # show version (also -V)
 ```
@@ -42,6 +43,3 @@ npm run typecheck        # type-check without emitting
 npm link
 omg --help
 ```
-
-The package is published as the scoped name `@coder11125/omg`. `publishConfig.access`
-is set to `public` in `package.json` so scoped packages publish without `--access public`.
