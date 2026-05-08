@@ -1,5 +1,5 @@
 {
-  "name": "omg",
+  "name": "@coder11125/omg",
   "version": "0.1.0",
   "description": "Oh My Git - a friendly CLI wrapper for common git tasks",
   "type": "module",
@@ -13,6 +13,17 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/coder11125/oh-my-git.git"
+  },
+  "bugs": {
+    "url": "https://github.com/coder11125/oh-my-git/issues"
+  },
+  "homepage": "https://github.com/coder11125/oh-my-git#readme",
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",
