@@ -69,6 +69,24 @@ program
   });
 
 // ---------------------------------------------------------------------------
+// remote subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('remote [url] [name]')
+  .description(
+    'list or add remote connections\n' +
+    '  (no args)        list all remotes\n' +
+    '  <url> [name]     add a new remote (name defaults to "origin")',
+  )
+  .action(async (url?: string, name?: string) => {
+    if (url) {
+      await addRemote(url, name ?? 'origin');
+    } else {
+      await listRemotes();
+    }
+  });
+
+// ---------------------------------------------------------------------------
 // root-level action helpers
 // ---------------------------------------------------------------------------
 async function checkoutBranch(branch: string): Promise<void> {
@@ -191,6 +209,56 @@ async function deleteBranch(name: string): Promise<void> {
       spinner.fail(chalk.red(`Failed to delete '${name}'`));
       console.error(chalk.red(msg));
     }
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// remote helpers
+// ---------------------------------------------------------------------------
+
+/** List all remotes and their fetch URLs. */
+async function listRemotes(): Promise<void> {
+  const spinner = ora('Fetching remotes').start();
+  try {
+    const remotes = await git.getRemotes(true);
+    spinner.stop();
+
+    if (remotes.length === 0) {
+      console.log(chalk.yellow('No remotes found.'));
+      return;
+    }
+
+    console.log(chalk.bold('\nRemotes:\n'));
+    for (const r of remotes) {
+      const urlStr = r.refs.fetch || r.refs.push || 'no url';
+      console.log(`  ${chalk.green(r.name.padEnd(12))} ${chalk.dim(urlStr)}`);
+    }
+    console.log('');
+  } catch (err) {
+    spinner.fail(chalk.red('Could not list remotes'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+/** Add a new remote. */
+async function addRemote(url: string, name: string): Promise<void> {
+  const spinner = ora(`Adding remote ${chalk.cyan(name)} (${chalk.dim(url)})`).start();
+  try {
+    // Check if remote already exists
+    const remotes = await git.getRemotes();
+    if (remotes.some(r => r.name === name)) {
+      spinner.fail(chalk.red(`Remote '${name}' already exists`));
+      process.exitCode = 1;
+      return;
+    }
+
+    await git.addRemote(name, url);
+    spinner.succeed(chalk.green(`Added remote '${name}'`));
+  } catch (err) {
+    spinner.fail(chalk.red(`Failed to add remote '${name}'`));
+    console.error(chalk.red(formatError(err)));
     process.exitCode = 1;
   }
 }

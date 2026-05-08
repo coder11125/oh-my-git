@@ -43,6 +43,14 @@ omg branch -n <name> -s        # create a new branch and switch to it
 omg branch -d <name>           # delete a branch (must be fully merged)
 ```
 
+### Remote management
+
+```bash
+omg remote                     # list all remotes
+omg remote <url>               # add a new remote named "origin"
+omg remote <url> <name>        # add a new remote with a custom name
+```
+
 ### Combine flags
 
 Flags can be combined in a single invocation, e.g. commit then switch:
