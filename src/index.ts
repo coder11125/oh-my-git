@@ -87,6 +87,16 @@ program
   });
 
 // ---------------------------------------------------------------------------
+// status subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('status')
+  .description('show a friendly summary of the current repository state')
+  .action(async () => {
+    await showStatus();
+  });
+
+// ---------------------------------------------------------------------------
 // root-level action helpers
 // ---------------------------------------------------------------------------
 async function checkoutBranch(branch: string): Promise<void> {
@@ -258,6 +268,66 @@ async function addRemote(url: string, name: string): Promise<void> {
     spinner.succeed(chalk.green(`Added remote '${name}'`));
   } catch (err) {
     spinner.fail(chalk.red(`Failed to add remote '${name}'`));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// status helpers
+// ---------------------------------------------------------------------------
+
+/** Display a pretty summary of the current git status. */
+async function showStatus(): Promise<void> {
+  const spinner = ora('Analyzing repository status').start();
+  try {
+    const status = await git.status();
+    spinner.stop();
+
+    console.log(chalk.bold('\n--- Repository Status ---\n'));
+
+    // 1. Branch Information
+    const branch = status.current ?? 'DETACHED';
+    let syncInfo = '';
+    if (status.ahead > 0 || status.behind > 0) {
+      const parts = [];
+      if (status.ahead > 0) parts.push(chalk.green(`↑ ${status.ahead} ahead`));
+      if (status.behind > 0) parts.push(chalk.red(`↓ ${status.behind} behind`));
+      syncInfo = ` (${parts.join(', ')})`;
+    }
+    console.log(`${chalk.bold('Branch:')} ${chalk.cyan(branch)}${syncInfo}\n`);
+
+    // 2. Changes Breakdown
+    const staged = status.staged;
+    const modified = status.modified.filter(f => !staged.includes(f));
+    const deleted = status.deleted.filter(f => !staged.includes(f));
+    const untracked = status.not_added;
+
+    if (staged.length > 0) {
+      console.log(chalk.green.bold('Staged changes:'));
+      staged.forEach(f => console.log(`  ${chalk.green('+')} ${f}`));
+      console.log('');
+    }
+
+    if (modified.length > 0 || deleted.length > 0) {
+      console.log(chalk.yellow.bold('Unstaged changes:'));
+      modified.forEach(f => console.log(`  ${chalk.yellow('M')} ${f}`));
+      deleted.forEach(f => console.log(`  ${chalk.red('D')} ${f}`));
+      console.log('');
+    }
+
+    if (untracked.length > 0) {
+      console.log(chalk.dim.bold('Untracked files:'));
+      untracked.forEach(f => console.log(`  ${chalk.dim('?')} ${f}`));
+      console.log('');
+    }
+
+    if (status.isClean()) {
+      console.log(chalk.green('✔ Working directory is clean.'));
+    }
+    console.log('');
+  } catch (err) {
+    spinner.fail(chalk.red('Could not fetch status'));
     console.error(chalk.red(formatError(err)));
     process.exitCode = 1;
   }

@@ -34,6 +34,14 @@ Switch to an existing branch:
 omg -v <branch>
 ```
 
+### Status
+
+Show a friendly summary of the current repository state:
+
+```bash
+omg status
+```
+
 ### Branch management
 
 ```bash
