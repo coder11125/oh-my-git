@@ -1,6 +1,6 @@
 {
   "name": "@coder11125/omg",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "Oh My Git - a friendly CLI wrapper for common git tasks",
   "type": "module",
   "bin": {
@@ -23,7 +23,7 @@
   "bugs": {
     "url": "https://github.com/coder11125/oh-my-git/issues"
   },
-  "homepage": "https://github.com/coder11125/oh-my-git#readme",
+  "homepage": "https://ohmygit-ebon.vercel.app/",
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",

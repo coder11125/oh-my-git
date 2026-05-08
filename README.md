@@ -18,18 +18,44 @@ That exposes the `omg` binary on your `PATH`.
 
 ## Usage
 
+### Commit
+
+Stage all changes and commit in one step:
+
 ```bash
-omg -v <branch>        # git checkout <branch>
-omg -c "message"       # git add . && git commit -m "message"
-omg remote <url>       # git remote add origin <url> (or set-url if origin exists)
-omg --help             # show help
-omg --version          # show version (also -V)
+omg -c "message"
 ```
 
-You can combine flags in a single invocation, e.g. commit then switch branches:
+### Checkout
+
+Switch to an existing branch:
+
+```bash
+omg -v <branch>
+```
+
+### Branch management
+
+```bash
+omg branch                     # list all local branches (* marks current)
+omg branch -n <name>           # create a new branch (stay on current)
+omg branch -n <name> -s        # create a new branch and switch to it
+omg branch -d <name>           # delete a branch (must be fully merged)
+```
+
+### Combine flags
+
+Flags can be combined in a single invocation, e.g. commit then switch:
 
 ```bash
 omg -c "wip: refactor" -v feature/new-thing
+```
+
+### Other
+
+```bash
+omg --help       # show help
+omg --version    # show version (also -V)
 ```
 
 ## Development
