@@ -8,10 +8,10 @@ A small, friendly TypeScript CLI wrapper around common git tasks. Built with
 
 ## Install
 
-Once published to npm, install globally with:
+Install globally from npm:
 
 ```bash
-npm install -g omg
+npm install -g @coder11125/omg
 ```
 
 That exposes the `omg` binary on your `PATH`.
@@ -47,9 +47,8 @@ omg --help
 
 ```bash
 npm login
-npm publish --access public
+npm publish
 ```
 
-> Note: the package name `omg` may already be taken on the public npm
-> registry. If it is, change `name` in `package.json` to a scoped name
-> (e.g. `@your-org/omg`) and republish. The `bin` alias will still be `omg`.
+The package is published as the scoped name `@coder11125/omg`. `publishConfig.access`
+is set to `public` in `package.json` so scoped packages publish without `--access public`.
