@@ -22,7 +22,7 @@ const program = new Command();
 program
   .name('omg')
   .description('Oh My Git - a friendly CLI wrapper for common git tasks')
-  .version('0.1.7', '-V, --version', 'output the current version')
+  .version('0.2.0', '-V, --version', 'output the current version')
   .option('-v, --visit <branch>', 'checkout the specified branch')
   .option('-c, --commit <message>', 'stage all changes and commit with a message')
   .action(async (opts: CliOptions) => {
@@ -679,22 +679,10 @@ async function showLog(count: number, oneline: boolean): Promise<void> {
 
     console.log(chalk.bold(`\nRecent commits (${Math.min(count, log.total)} shown):\n`));
 
-    for (const commit of log.latest ? [log.latest] : []) {
-      if (oneline) {
-        console.log(`  ${chalk.yellow(commit.hash.slice(0, 7))} ${commit.message}`);
-      } else {
-        console.log(`  ${chalk.yellow(commit.hash.slice(0, 7))} ${commit.message}`);
-      }
-    }
-
-    // Handle all commits
+    // log.all contains all commits including latest
     if (log.all && log.all.length > 0) {
       for (const commit of log.all) {
-        if (oneline) {
-          console.log(`  ${chalk.yellow(commit.hash.slice(0, 7))} ${commit.message}`);
-        } else {
-          console.log(`  ${chalk.yellow(commit.hash.slice(0, 7))} ${commit.message}`);
-        }
+        console.log(`  ${chalk.yellow(commit.hash.slice(0, 7))} ${commit.message}`);
       }
     }
 
@@ -761,8 +749,18 @@ async function showDiff(file: string | undefined, staged: boolean): Promise<void
 // ---------------------------------------------------------------------------
 // clone helpers
 // ---------------------------------------------------------------------------
+/** Sanitize directory name to prevent path traversal */
+function sanitizeDirName(name: string): string {
+  return name
+    .replace(/[\\/]/g, '-')     // Replace path separators with dash
+    .replace(/^[.]+/, '')        // Remove leading dots (prevent hidden dirs)
+    .replace(/[<>:"|?*]/g, '-')  // Replace invalid Windows chars
+    .substring(0, 100) || 'repo'; // Limit length, fallback to 'repo'
+}
+
 async function cloneRepo(url: string, directory?: string): Promise<void> {
-  const targetDir = directory || url.split('/').pop()?.replace('.git', '') || 'repo';
+  const rawDir = directory || url.split('/').pop()?.replace('.git', '') || 'repo';
+  const targetDir = sanitizeDirName(rawDir);
   const spinner = ora(`Cloning into ${chalk.cyan(targetDir)}`).start();
 
   try {
@@ -874,6 +872,12 @@ async function stashList(): Promise<void> {
 }
 
 async function stashDrop(index?: string): Promise<void> {
+  // Validate index is numeric
+  if (index && !/^\d+$/.test(index)) {
+    console.error(chalk.red(`Invalid stash index: '${index}' (must be a number)`));
+    process.exitCode = 1;
+    return;
+  }
   const stashRef = index ? `stash@{${index}}` : 'stash@{0}';
   const spinner = ora(`Dropping ${chalk.cyan(stashRef)}`).start();
 
@@ -893,6 +897,12 @@ async function stashDrop(index?: string): Promise<void> {
 }
 
 async function stashApply(index?: string): Promise<void> {
+  // Validate index is numeric
+  if (index && !/^\d+$/.test(index)) {
+    console.error(chalk.red(`Invalid stash index: '${index}' (must be a number)`));
+    process.exitCode = 1;
+    return;
+  }
   const stashRef = index ? `stash@{${index}}` : 'stash@{0}';
   const spinner = ora(`Applying ${chalk.cyan(stashRef)}`).start();
 
