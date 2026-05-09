@@ -59,6 +59,48 @@ omg remote <url>               # add a new remote named "origin"
 omg remote <url> <name>        # add a new remote with a custom name
 ```
 
+### Push
+
+```bash
+omg push                       # push to upstream
+omg push <remote>              # push to specific remote
+omg push -f                    # force push with lease (safer)
+```
+
+### Pull
+
+```bash
+omg pull                       # pull from upstream
+omg pull <remote>              # pull from specific remote
+omg pull -r                    # pull with rebase
+```
+
+### Merge
+
+```bash
+omg merge <branch>             # merge branch into current
+omg merge <branch> --squash    # squash merge
+omg merge --abort              # abort ongoing merge
+```
+
+### Rebase
+
+```bash
+omg rebase <branch>            # rebase current onto branch
+omg rebase --continue          # continue after resolving conflicts
+omg rebase --abort             # abort rebase
+```
+
+### Stash
+
+```bash
+omg stash                      # stash current changes
+omg stash pop                  # pop most recent stash
+omg stash list                 # list all stashes
+omg stash drop 0               # drop stash at index 0
+omg stash apply 0              # apply stash at index 0 (keep in stash)
+```
+
 ### Combine flags
 
 Flags can be combined in a single invocation, e.g. commit then switch:
