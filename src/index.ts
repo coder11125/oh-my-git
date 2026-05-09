@@ -22,7 +22,7 @@ const program = new Command();
 program
   .name('omg')
   .description('Oh My Git - a friendly CLI wrapper for common git tasks')
-  .version('0.1.3', '-V, --version', 'output the current version')
+  .version('0.1.7', '-V, --version', 'output the current version')
   .option('-v, --visit <branch>', 'checkout the specified branch')
   .option('-c, --commit <message>', 'stage all changes and commit with a message')
   .action(async (opts: CliOptions) => {
@@ -94,6 +94,108 @@ program
   .description('show a friendly summary of the current repository state')
   .action(async () => {
     await showStatus();
+  });
+
+// ---------------------------------------------------------------------------
+// push subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('push [remote]')
+  .description(
+    'push commits to a remote\n' +
+    '  (no args)           push to upstream remote\n' +
+    '  <remote>            push to specific remote\n' +
+    '  -f, --force         force push with lease',
+  )
+  .option('-f, --force', 'force push with lease')
+  .option('-u, --set-upstream <branch>', 'set upstream and push')
+  .action(async (remote?: string, options?: { force?: boolean; setUpstream?: string }) => {
+    await pushCommits(remote, options?.force ?? false, options?.setUpstream);
+  });
+
+// ---------------------------------------------------------------------------
+// pull subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('pull [remote]')
+  .description(
+    'fetch and integrate changes from remote\n' +
+    '  (no args)           pull from upstream\n' +
+    '  <remote>            pull from specific remote\n' +
+    '  -r, --rebase        rebase instead of merge',
+  )
+  .option('-r, --rebase', 'rebase instead of merge')
+  .action(async (remote?: string, options?: { rebase?: boolean }) => {
+    await pullChanges(remote, options?.rebase ?? false);
+  });
+
+// ---------------------------------------------------------------------------
+// merge subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('merge [branch]')
+  .description(
+    'merge changes from another branch\n' +
+    '  <branch>            merge branch into current\n' +
+    '  --squash            squash merge\n' +
+    '  --abort             abort ongoing merge',
+  )
+  .option('--squash', 'squash merge')
+  .option('--abort', 'abort ongoing merge')
+  .action(async (branch?: string, options?: { squash?: boolean; abort?: boolean }) => {
+    if (options?.abort) {
+      await abortMerge();
+    } else if (branch) {
+      await mergeBranch(branch, options?.squash ?? false);
+    } else {
+      console.error(chalk.red('Error: branch name required (unless using --abort)'));
+      process.exitCode = 1;
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// rebase subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('rebase [branch]')
+  .description(
+    'reapply commits on top of another base\n' +
+    '  <branch>            rebase current onto branch\n' +
+    '  --continue          continue after resolving conflicts\n' +
+    '  --abort             abort rebase',
+  )
+  .option('--continue', 'continue after resolving conflicts')
+  .option('--abort', 'abort rebase')
+  .action(async (branch?: string, options?: { continue?: boolean; abort?: boolean }) => {
+    if (options?.continue) {
+      await continueRebase();
+    } else if (options?.abort) {
+      await abortRebase();
+    } else if (branch) {
+      await rebaseBranch(branch);
+    } else {
+      console.error(chalk.red('Error: branch name required (unless using --continue or --abort)'));
+      process.exitCode = 1;
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// stash subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('stash [action]')
+  .description(
+    'stash and restore changes\n' +
+    '  (no action)         stash current changes\n' +
+    '  pop                 pop most recent stash\n' +
+    '  list                list all stashes\n' +
+    '  drop <index>        drop specific stash\n' +
+    '  apply <index>       apply stash without removing',
+  )
+  .argument('[action]', 'stash action: pop, list, drop, apply')
+  .argument('[index]', 'stash index for drop/apply (e.g., 0)')
+  .action(async (action?: string, index?: string) => {
+    await handleStash(action, index);
   });
 
 // ---------------------------------------------------------------------------
@@ -329,6 +431,312 @@ async function showStatus(): Promise<void> {
   } catch (err) {
     spinner.fail(chalk.red('Could not fetch status'));
     console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// push helpers
+// ---------------------------------------------------------------------------
+async function pushCommits(remote?: string, force: boolean = false, setUpstream?: string): Promise<void> {
+  const target = setUpstream ?? remote;
+  const spinnerText = target ? `Pushing to ${chalk.cyan(target)}` : 'Pushing to upstream';
+  const spinner = ora(spinnerText).start();
+
+  try {
+    const options: string[] = [];
+    if (force) options.push('--force-with-lease');
+
+    if (setUpstream) {
+      options.push('-u', setUpstream);
+      await git.push('origin', setUpstream, options);
+      spinner.succeed(chalk.green(`Pushed and set upstream to '${setUpstream}'`));
+    } else if (remote) {
+      await git.push(remote, 'HEAD', options);
+      spinner.succeed(chalk.green(`Pushed to ${remote}`));
+    } else {
+      await git.push(options);
+      spinner.succeed(chalk.green('Pushed to upstream'));
+    }
+  } catch (err) {
+    spinner.fail(chalk.red('Push failed'));
+    const msg = formatError(err);
+    if (msg.includes('no upstream branch')) {
+      console.error(chalk.red('No upstream configured. Use -u flag to set upstream.'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// pull helpers
+// ---------------------------------------------------------------------------
+async function pullChanges(remote?: string, rebase: boolean = false): Promise<void> {
+  const spinnerText = remote ? `Pulling from ${chalk.cyan(remote)}` : 'Pulling from upstream';
+  const spinner = ora(spinnerText).start();
+
+  try {
+    const options: string[] = [];
+    if (rebase) options.push('--rebase');
+
+    if (remote) {
+      await git.pull(remote, 'HEAD', options);
+      spinner.succeed(chalk.green(`Pulled from ${remote}${rebase ? ' (rebase)' : ''}`));
+    } else {
+      await git.pull(options);
+      spinner.succeed(chalk.green(`Pulled from upstream${rebase ? ' (rebase)' : ''}`));
+    }
+  } catch (err) {
+    spinner.fail(chalk.red('Pull failed'));
+    const msg = formatError(err);
+    if (msg.includes('merge conflicts')) {
+      console.error(chalk.red('Merge conflicts detected. Resolve conflicts and commit.'));
+    } else if (msg.includes('local changes')) {
+      console.error(chalk.red('You have uncommitted changes. Stash or commit them first.'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// merge helpers
+// ---------------------------------------------------------------------------
+async function mergeBranch(branch: string, squash: boolean = false): Promise<void> {
+  const spinner = ora(`Merging ${chalk.cyan(branch)}`).start();
+
+  try {
+    const options: string[] = [];
+    if (squash) options.push('--squash');
+
+    await git.merge([branch, ...options]);
+
+    if (squash) {
+      spinner.succeed(chalk.green(`Squashed ${branch} into current branch`));
+      console.log(chalk.yellow('Commit the squashed changes with: omg -c "message"'));
+    } else {
+      spinner.succeed(chalk.green(`Merged '${branch}' into current branch`));
+    }
+  } catch (err) {
+    spinner.fail(chalk.red('Merge failed'));
+    const msg = formatError(err);
+    if (msg.includes('conflicts')) {
+      console.error(chalk.red('Merge conflicts detected. Resolve conflicts and commit, or use --abort to cancel.'));
+    } else if (msg.includes('already up to date')) {
+      console.log(chalk.yellow('Already up to date.'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+async function abortMerge(): Promise<void> {
+  const spinner = ora('Aborting merge').start();
+
+  try {
+    await git.raw(['merge', '--abort']);
+    spinner.succeed(chalk.green('Merge aborted'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to abort merge'));
+    const msg = formatError(err);
+    if (msg.includes('no merge')) {
+      console.error(chalk.red('No merge in progress'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// rebase helpers
+// ---------------------------------------------------------------------------
+async function rebaseBranch(branch: string): Promise<void> {
+  const spinner = ora(`Rebasing onto ${chalk.cyan(branch)}`).start();
+
+  try {
+    await git.rebase([branch]);
+    spinner.succeed(chalk.green(`Rebased onto '${branch}'`));
+  } catch (err) {
+    spinner.fail(chalk.red('Rebase failed'));
+    const msg = formatError(err);
+    if (msg.includes('conflicts')) {
+      console.error(chalk.red('Rebase conflicts detected. Resolve conflicts, then use --continue or --abort.'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+async function continueRebase(): Promise<void> {
+  const spinner = ora('Continuing rebase').start();
+
+  try {
+    await git.rebase(['--continue']);
+    spinner.succeed(chalk.green('Rebase completed'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to continue rebase'));
+    const msg = formatError(err);
+    if (msg.includes('no rebase')) {
+      console.error(chalk.red('No rebase in progress'));
+    } else if (msg.includes('conflicts')) {
+      console.error(chalk.red('Unresolved conflicts remain. Resolve them first.'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+async function abortRebase(): Promise<void> {
+  const spinner = ora('Aborting rebase').start();
+
+  try {
+    await git.rebase(['--abort']);
+    spinner.succeed(chalk.green('Rebase aborted'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to abort rebase'));
+    const msg = formatError(err);
+    if (msg.includes('no rebase')) {
+      console.error(chalk.red('No rebase in progress'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// stash helpers
+// ---------------------------------------------------------------------------
+async function handleStash(action?: string, index?: string): Promise<void> {
+  switch (action) {
+    case 'pop':
+      await stashPop();
+      break;
+    case 'list':
+      await stashList();
+      break;
+    case 'drop':
+      await stashDrop(index);
+      break;
+    case 'apply':
+      await stashApply(index);
+      break;
+    case undefined:
+    case '':
+      await stashSave();
+      break;
+    default:
+      console.error(chalk.red(`Unknown stash action: ${action}`));
+      console.error(chalk.dim('Valid actions: pop, list, drop <index>, apply <index>'));
+      process.exitCode = 1;
+  }
+}
+
+async function stashSave(): Promise<void> {
+  const spinner = ora('Stashing changes').start();
+
+  try {
+    const result = await git.stash(['save']);
+    if (result && result.includes('No local changes')) {
+      spinner.warn(chalk.yellow('No local changes to stash'));
+    } else {
+      spinner.succeed(chalk.green('Changes stashed'));
+    }
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to stash changes'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+async function stashPop(): Promise<void> {
+  const spinner = ora('Popping stash').start();
+
+  try {
+    await git.stash(['pop']);
+    spinner.succeed(chalk.green('Stash popped'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to pop stash'));
+    const msg = formatError(err);
+    if (msg.includes('No stash entries')) {
+      console.error(chalk.red('No stash entries found'));
+    } else if (msg.includes('conflicts')) {
+      console.error(chalk.red('Conflicts when applying stash. Resolve conflicts manually.'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+async function stashList(): Promise<void> {
+  const spinner = ora('Fetching stash list').start();
+
+  try {
+    const list = await git.stash(['list']);
+    spinner.stop();
+
+    if (!list || list.trim() === '') {
+      console.log(chalk.yellow('No stashes found.'));
+      return;
+    }
+
+    console.log(chalk.bold('\nStashes:\n'));
+    const lines = list.split('\n').filter(line => line.trim() !== '');
+    for (const line of lines) {
+      console.log(`  ${chalk.cyan(line)}`);
+    }
+    console.log('');
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to list stashes'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+async function stashDrop(index?: string): Promise<void> {
+  const stashRef = index ? `stash@{${index}}` : 'stash@{0}';
+  const spinner = ora(`Dropping ${chalk.cyan(stashRef)}`).start();
+
+  try {
+    await git.stash(['drop', stashRef]);
+    spinner.succeed(chalk.green(`Dropped ${stashRef}`));
+  } catch (err) {
+    spinner.fail(chalk.red(`Failed to drop ${stashRef}`));
+    const msg = formatError(err);
+    if (msg.includes('Invalid reflog')) {
+      console.error(chalk.red(`Invalid stash index: ${index ?? 0}`));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+async function stashApply(index?: string): Promise<void> {
+  const stashRef = index ? `stash@{${index}}` : 'stash@{0}';
+  const spinner = ora(`Applying ${chalk.cyan(stashRef)}`).start();
+
+  try {
+    await git.stash(['apply', stashRef]);
+    spinner.succeed(chalk.green(`Applied ${stashRef}`));
+  } catch (err) {
+    spinner.fail(chalk.red(`Failed to apply ${stashRef}`));
+    const msg = formatError(err);
+    if (msg.includes('Invalid reflog')) {
+      console.error(chalk.red(`Invalid stash index: ${index ?? 0}`));
+    } else if (msg.includes('conflicts')) {
+      console.error(chalk.red('Conflicts when applying stash. Resolve conflicts manually.'));
+    } else {
+      console.error(chalk.red(msg));
+    }
     process.exitCode = 1;
   }
 }
