@@ -110,7 +110,7 @@ program
   .option('-f, --force', 'force push with lease')
   .option('-u, --set-upstream <branch>', 'set upstream and push')
   .action(async (remote?: string, options?: { force?: boolean; setUpstream?: string }) => {
-    await pushCommits(remote, options?.force ?? false, options?.setUpstream);
+    await pushCommits(remote ?? 'origin', options?.force ?? false, options?.setUpstream);
   });
 
 // ---------------------------------------------------------------------------
@@ -183,19 +183,19 @@ program
 // stash subcommand
 // ---------------------------------------------------------------------------
 program
-  .command('stash [action]')
+  .command('stash')
   .description(
     'stash and restore changes\n' +
-    '  (no action)         stash current changes\n' +
+    '  (no subcommand)     stash current changes\n' +
     '  pop                 pop most recent stash\n' +
     '  list                list all stashes\n' +
     '  drop <index>        drop specific stash\n' +
     '  apply <index>       apply stash without removing',
   )
-  .argument('[action]', 'stash action: pop, list, drop, apply')
+  .argument('[subcommand]', 'subcommand: pop, list, drop, apply')
   .argument('[index]', 'stash index for drop/apply (e.g., 0)')
-  .action(async (action?: string, index?: string) => {
-    await handleStash(action, index);
+  .action(async (subcommand?: string, index?: string) => {
+    await handleStash(subcommand, index);
   });
 
 // ---------------------------------------------------------------------------
@@ -438,7 +438,7 @@ async function showStatus(): Promise<void> {
 // ---------------------------------------------------------------------------
 // push helpers
 // ---------------------------------------------------------------------------
-async function pushCommits(remote?: string, force: boolean = false, setUpstream?: string): Promise<void> {
+async function pushCommits(remote: string, force: boolean = false, setUpstream?: string): Promise<void> {
   const target = setUpstream ?? remote;
   const spinnerText = target ? `Pushing to ${chalk.cyan(target)}` : 'Pushing to upstream';
   const spinner = ora(spinnerText).start();
@@ -448,15 +448,12 @@ async function pushCommits(remote?: string, force: boolean = false, setUpstream?
     if (force) options.push('--force-with-lease');
 
     if (setUpstream) {
-      options.push('-u', setUpstream);
-      await git.push('origin', setUpstream, options);
-      spinner.succeed(chalk.green(`Pushed and set upstream to '${setUpstream}'`));
-    } else if (remote) {
+      options.push('-u');
+      await git.push(remote, 'HEAD', options);
+      spinner.succeed(chalk.green(`Pushed and set upstream to '${remote}/${setUpstream}'`));
+    } else {
       await git.push(remote, 'HEAD', options);
       spinner.succeed(chalk.green(`Pushed to ${remote}`));
-    } else {
-      await git.push(options);
-      spinner.succeed(chalk.green('Pushed to upstream'));
     }
   } catch (err) {
     spinner.fail(chalk.red('Push failed'));
