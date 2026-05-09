@@ -1,6 +1,6 @@
 {
   "name": "@coder11125/omg",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "Oh My Git - a friendly CLI wrapper for common git tasks",
   "type": "module",
   "bin": {

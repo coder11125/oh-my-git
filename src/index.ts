@@ -180,6 +180,53 @@ program
   });
 
 // ---------------------------------------------------------------------------
+// log subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('log')
+  .description(
+    'show commit history\n' +
+    '  (no flags)         show recent commits\n' +
+    '  -n <number>        limit to N commits\n' +
+    '  --oneline          condensed one-line format',
+  )
+  .option('-n, --number <count>', 'limit number of commits', '10')
+  .option('--oneline', 'show condensed one-line format')
+  .action(async (options: { number: string; oneline?: boolean }) => {
+    await showLog(parseInt(options.number, 10), options.oneline ?? false);
+  });
+
+// ---------------------------------------------------------------------------
+// diff subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('diff [file]')
+  .description(
+    'show changes between commits or working tree\n' +
+    '  (no args)          show unstaged changes\n' +
+    '  --staged           show staged changes\n' +
+    '  <file>             show changes for specific file',
+  )
+  .option('--staged', 'show staged changes')
+  .action(async (file?: string, options?: { staged?: boolean }) => {
+    await showDiff(file, options?.staged ?? false);
+  });
+
+// ---------------------------------------------------------------------------
+// clone subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('clone <url> [directory]')
+  .description(
+    'clone a repository into a new directory\n' +
+    '  <url>              repository URL to clone\n' +
+    '  [directory]        optional directory name (defaults to repo name)',
+  )
+  .action(async (url: string, directory?: string) => {
+    await cloneRepo(url, directory);
+  });
+
+// ---------------------------------------------------------------------------
 // stash subcommand
 // ---------------------------------------------------------------------------
 program
@@ -601,6 +648,134 @@ async function abortRebase(): Promise<void> {
     const msg = formatError(err);
     if (msg.includes('no rebase')) {
       console.error(chalk.red('No rebase in progress'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// log helpers
+// ---------------------------------------------------------------------------
+async function showLog(count: number, oneline: boolean): Promise<void> {
+  const spinner = ora('Fetching commit history').start();
+
+  try {
+    const options: string[] = ['-n', String(count)];
+    if (oneline) {
+      options.push('--oneline', '--decorate');
+    } else {
+      options.push('--pretty=format:%h %s %C(dim)(%cr) %C(bold blue)<%an>%Creset');
+    }
+
+    const log = await git.log(options);
+    spinner.stop();
+
+    if (!log || log.total === 0) {
+      console.log(chalk.yellow('No commits found.'));
+      return;
+    }
+
+    console.log(chalk.bold(`\nRecent commits (${Math.min(count, log.total)} shown):\n`));
+
+    for (const commit of log.latest ? [log.latest] : []) {
+      if (oneline) {
+        console.log(`  ${chalk.yellow(commit.hash.slice(0, 7))} ${commit.message}`);
+      } else {
+        console.log(`  ${chalk.yellow(commit.hash.slice(0, 7))} ${commit.message}`);
+      }
+    }
+
+    // Handle all commits
+    if (log.all && log.all.length > 0) {
+      for (const commit of log.all) {
+        if (oneline) {
+          console.log(`  ${chalk.yellow(commit.hash.slice(0, 7))} ${commit.message}`);
+        } else {
+          console.log(`  ${chalk.yellow(commit.hash.slice(0, 7))} ${commit.message}`);
+        }
+      }
+    }
+
+    console.log('');
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to fetch log'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// diff helpers
+// ---------------------------------------------------------------------------
+async function showDiff(file: string | undefined, staged: boolean): Promise<void> {
+  const spinnerText = staged ? 'Fetching staged changes' : 'Fetching unstaged changes';
+  const spinner = ora(spinnerText).start();
+
+  try {
+    const options: string[] = staged ? ['--staged'] : [];
+    if (file) {
+      options.push('--', file);
+    }
+
+    const diff = await git.diff(options);
+    spinner.stop();
+
+    if (!diff || diff.trim() === '') {
+      if (staged) {
+        console.log(chalk.yellow('No staged changes to show.'));
+      } else if (file) {
+        console.log(chalk.yellow(`No changes in ${file}.`));
+      } else {
+        console.log(chalk.yellow('No unstaged changes to show.'));
+      }
+      return;
+    }
+
+    console.log(chalk.bold(`\n${staged ? 'Staged' : 'Unstaged'} changes:\n`));
+
+    // Simple syntax highlighting for diff output
+    const lines = diff.split('\n');
+    for (const line of lines) {
+      if (line.startsWith('+')) {
+        console.log(chalk.green(line));
+      } else if (line.startsWith('-')) {
+        console.log(chalk.red(line));
+      } else if (line.startsWith('@@')) {
+        console.log(chalk.cyan(line));
+      } else if (line.startsWith('diff') || line.startsWith('index') || line.startsWith('---') || line.startsWith('+++')) {
+        console.log(chalk.dim(line));
+      } else {
+        console.log(line);
+      }
+    }
+    console.log('');
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to fetch diff'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// clone helpers
+// ---------------------------------------------------------------------------
+async function cloneRepo(url: string, directory?: string): Promise<void> {
+  const targetDir = directory || url.split('/').pop()?.replace('.git', '') || 'repo';
+  const spinner = ora(`Cloning into ${chalk.cyan(targetDir)}`).start();
+
+  try {
+    await git.clone(url, targetDir);
+    spinner.succeed(chalk.green(`Cloned into '${targetDir}'`));
+    console.log(chalk.dim(`  cd ${targetDir} && omg status`));
+  } catch (err) {
+    spinner.fail(chalk.red('Clone failed'));
+    const msg = formatError(err);
+    if (msg.includes('already exists')) {
+      console.error(chalk.red(`Directory '${targetDir}' already exists.`));
+    } else if (msg.includes('not found') || msg.includes('does not exist')) {
+      console.error(chalk.red('Repository not found. Check the URL.'));
     } else {
       console.error(chalk.red(msg));
     }

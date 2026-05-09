@@ -101,6 +101,36 @@ omg stash drop 0               # drop stash at index 0
 omg stash apply 0              # apply stash at index 0 (keep in stash)
 ```
 
+### Log
+
+View commit history with pretty formatting:
+
+```bash
+omg log                      # show last 10 commits
+omg log -n 20                # show last 20 commits
+omg log --oneline            # condensed one-line format
+omg log -n 5 --oneline       # combined: last 5, one-line
+```
+
+### Diff
+
+Review changes before committing:
+
+```bash
+omg diff                     # show unstaged changes
+omg diff --staged            # show staged changes
+omg diff src/index.ts        # show changes for specific file
+```
+
+### Clone
+
+Clone a repository:
+
+```bash
+omg clone <url>              # clone to default directory
+omg clone <url> my-project     # clone to custom directory
+```
+
 ### Combine flags
 
 Flags can be combined in a single invocation, e.g. commit then switch:
