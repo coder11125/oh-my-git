@@ -326,6 +326,62 @@ program
   });
 
 // ---------------------------------------------------------------------------
+// revert subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('revert <commit>')
+  .description(
+    'revert an existing commit (creates a new commit that undoes changes)\n' +
+    '  <commit>              commit hash to revert\n' +
+    '  --continue            continue after resolving conflicts',
+  )
+  .option('--continue', 'continue after resolving conflicts')
+  .action(async (commit: string, options?: { continue?: boolean }) => {
+    if (options?.continue) {
+      await continueRevert();
+    } else {
+      await revertCommit(commit);
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// cherry-pick subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('cherry-pick <commit>')
+  .description(
+    'apply a commit from another branch\n' +
+    '  <commit>              commit hash to cherry-pick\n' +
+    '  --continue            continue after resolving conflicts',
+  )
+  .option('--continue', 'continue after resolving conflicts')
+  .action(async (commit: string, options?: { continue?: boolean }) => {
+    if (options?.continue) {
+      await continueCherryPick();
+    } else {
+      await cherryPickCommit(commit);
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// config subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('config <key> [value]')
+  .description(
+    'get or set git configuration\n' +
+    '  <key>                 config key (e.g., user.name)\n' +
+    '  [value]               set value (if omitted, shows current value)',
+  )
+  .action(async (key: string, value?: string) => {
+    if (value !== undefined) {
+      await setConfig(key, value);
+    } else {
+      await getConfig(key);
+    }
+  });
+
+// ---------------------------------------------------------------------------
 // root-level action helpers
 // ---------------------------------------------------------------------------
 async function checkoutBranch(branch: string): Promise<void> {
@@ -1062,7 +1118,7 @@ async function performUpdate(version: string): Promise<void> {
 }
 
 async function updateOmg(): Promise<void> {
-  const currentVersion = '0.2.3'; // Hardcoded from package.json
+  const currentVersion = '0.2.4'; // Hardcoded from package.json
 
   const spinner = ora('Checking for updates').start();
   const latestVersion = await getLatestVersion();
@@ -1218,6 +1274,127 @@ async function resetChanges(mode: 'soft' | 'mixed' | 'hard'): Promise<void> {
     }
   } catch (err) {
     spinner.fail(chalk.red('Reset failed'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// revert helpers
+// ---------------------------------------------------------------------------
+async function revertCommit(commit: string): Promise<void> {
+  const spinner = ora(`Reverting commit ${chalk.cyan(commit)}`).start();
+
+  try {
+    await git.raw(['revert', '--no-edit', commit]);
+    spinner.succeed(chalk.green(`Reverted commit '${commit}'`));
+  } catch (err) {
+    spinner.fail(chalk.red(`Failed to revert '${commit}'`));
+    const msg = formatError(err);
+    if (msg.includes('conflicts')) {
+      console.error(chalk.red('Merge conflicts detected. Resolve conflicts, then use: omg revert --continue'));
+    } else if (msg.includes('is a merge')) {
+      console.error(chalk.red('Cannot revert merge commit automatically. Use git revert -m 1 <commit>'));
+    } else if (msg.includes('already reverted')) {
+      console.log(chalk.yellow('This commit may have already been reverted.'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+async function continueRevert(): Promise<void> {
+  const spinner = ora('Continuing revert').start();
+
+  try {
+    await git.raw(['revert', '--continue']);
+    spinner.succeed(chalk.green('Revert completed'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to continue revert'));
+    const msg = formatError(err);
+    if (msg.includes('no revert')) {
+      console.error(chalk.red('No revert in progress'));
+    } else if (msg.includes('conflicts')) {
+      console.error(chalk.red('Unresolved conflicts remain. Resolve them first.'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// cherry-pick helpers
+// ---------------------------------------------------------------------------
+async function cherryPickCommit(commit: string): Promise<void> {
+  const spinner = ora(`Cherry-picking ${chalk.cyan(commit)}`).start();
+
+  try {
+    await git.raw(['cherry-pick', commit]);
+    spinner.succeed(chalk.green(`Cherry-picked commit '${commit}'`));
+  } catch (err) {
+    spinner.fail(chalk.red(`Failed to cherry-pick '${commit}'`));
+    const msg = formatError(err);
+    if (msg.includes('conflicts')) {
+      console.error(chalk.red('Merge conflicts detected. Resolve conflicts, then use: omg cherry-pick --continue'));
+    } else if (msg.includes('already exists')) {
+      console.error(chalk.yellow('This commit is already in the current branch.'));
+    } else if (msg.includes('empty')) {
+      console.error(chalk.yellow('This cherry-pick would result in an empty commit.'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+async function continueCherryPick(): Promise<void> {
+  const spinner = ora('Continuing cherry-pick').start();
+
+  try {
+    await git.raw(['cherry-pick', '--continue']);
+    spinner.succeed(chalk.green('Cherry-pick completed'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to continue cherry-pick'));
+    const msg = formatError(err);
+    if (msg.includes('no cherry-pick')) {
+      console.error(chalk.red('No cherry-pick in progress'));
+    } else if (msg.includes('conflicts')) {
+      console.error(chalk.red('Unresolved conflicts remain. Resolve them first.'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// config helpers
+// ---------------------------------------------------------------------------
+async function getConfig(key: string): Promise<void> {
+  try {
+    const value = await git.getConfig(key);
+    if (value.value) {
+      console.log(`${chalk.green(key)} = ${chalk.cyan(value.value)}`);
+    } else {
+      console.log(chalk.yellow(`No value set for '${key}'`));
+    }
+  } catch (err) {
+    console.error(chalk.red(`Failed to get config '${key}'`));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+async function setConfig(key: string, value: string): Promise<void> {
+  const spinner = ora(`Setting ${chalk.cyan(key)} = ${chalk.cyan(value)}`).start();
+
+  try {
+    await git.addConfig(key, value, false, 'local');
+    spinner.succeed(chalk.green(`Set '${key}' to '${value}'`));
+  } catch (err) {
+    spinner.fail(chalk.red(`Failed to set config '${key}'`));
     console.error(chalk.red(formatError(err)));
     process.exitCode = 1;
   }

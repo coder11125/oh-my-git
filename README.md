@@ -193,6 +193,33 @@ omg reset --soft            # keep changes staged
 omg reset --hard            # discard all changes (dangerous!)
 ```
 
+### Revert
+
+Safely undo a commit by creating a new commit that reverses the changes:
+
+```bash
+omg revert <commit>         # revert a commit (creates new undo commit)
+omg revert --continue       # continue after resolving conflicts
+```
+
+### Cherry-pick
+
+Apply a commit from another branch:
+
+```bash
+omg cherry-pick <commit>    # apply commit from another branch
+omg cherry-pick --continue  # continue after resolving conflicts
+```
+
+### Config
+
+Get or set git configuration:
+
+```bash
+omg config user.name         # get current value
+omg config user.name "John"  # set value
+```
+
 ## Development
 
 ```bash
