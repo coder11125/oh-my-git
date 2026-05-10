@@ -994,7 +994,7 @@ async function performUpdate(version: string): Promise<void> {
 }
 
 async function updateOmg(): Promise<void> {
-  const currentVersion = '0.2.0'; // Hardcoded from package.json
+  const currentVersion = '0.2.1'; // Hardcoded from package.json
 
   const spinner = ora('Checking for updates').start();
   const latestVersion = await getLatestVersion();
