@@ -32,6 +32,29 @@ interface BranchOptions {
 
 const git: SimpleGit = simpleGit();
 
+/** Reject strings that look like git flags (start with `-`). */
+function validateNotFlag(value: string, label: string): void {
+  if (value.startsWith('-')) {
+    console.error(chalk.red(`Error: ${label} must not start with a dash ('${value}')`));
+    process.exitCode = 1;
+    throw new Error(`invalid ${label}`);
+  }
+}
+
+/** Validate a config key does not contain scope-escalation flags. */
+function validateConfigKey(key: string): void {
+  validateNotFlag(key, 'config key');
+  const lower = key.toLowerCase();
+  const forbidden = ['--global', '--system', '--local', '--file', '--blob'];
+  for (const flag of forbidden) {
+    if (lower.includes(flag)) {
+      console.error(chalk.red(`Error: config key must not contain '${flag}'`));
+      process.exitCode = 1;
+      throw new Error('invalid config key');
+    }
+  }
+}
+
 const program = new Command();
 
 program
@@ -398,6 +421,7 @@ program
 // root-level action helpers
 // ---------------------------------------------------------------------------
 async function checkoutBranch(branch: string): Promise<void> {
+  validateNotFlag(branch, 'branch name');
   const spinner = ora(`Checking out ${chalk.cyan(branch)}`).start();
   try {
     await git.checkout(branch);
@@ -414,7 +438,7 @@ async function stageAndCommit(message: string): Promise<void> {
   try {
     await git.add('.');
     spinner.text = `Committing with message: ${chalk.cyan(message)}`;
-    const result = await git.commit(message);
+    const result = await git.commit(message, undefined, { '--': null });
     const sha = result.commit ? ` (${result.commit})` : '';
     spinner.succeed(chalk.green(`Committed${sha}`));
   } catch (err) {
@@ -459,6 +483,7 @@ async function listBranches(): Promise<void> {
 
 /** Create a branch, optionally switching to it immediately. */
 async function createBranch(name: string, switchAfter: boolean): Promise<void> {
+  validateNotFlag(name, 'branch name');
   const spinner = ora(`Creating branch ${chalk.cyan(name)}`).start();
   try {
     // Refuse to create if the name already exists
@@ -492,6 +517,7 @@ async function createBranch(name: string, switchAfter: boolean): Promise<void> {
 
 /** Delete a branch with a safety guard (must be fully merged). */
 async function deleteBranch(name: string): Promise<void> {
+  validateNotFlag(name, 'branch name');
   const spinner = ora(`Deleting branch ${chalk.cyan(name)}`).start();
   try {
     const summary = await git.branchLocal();
@@ -552,6 +578,7 @@ async function listRemotes(): Promise<void> {
 
 /** Add a new remote. */
 async function addRemote(url: string, name: string): Promise<void> {
+  validateNotFlag(name, 'remote name');
   const spinner = ora(`Adding remote ${chalk.cyan(name)} (${chalk.dim(url)})`).start();
   try {
     // Check if remote already exists
@@ -635,6 +662,8 @@ async function showStatus(): Promise<void> {
 // push helpers
 // ---------------------------------------------------------------------------
 async function pushCommits(remote: string, force: boolean = false, setUpstream?: string): Promise<void> {
+  validateNotFlag(remote, 'remote name');
+  if (setUpstream) validateNotFlag(setUpstream, 'upstream branch');
   const target = setUpstream ?? remote;
   const spinnerText = target ? `Pushing to ${chalk.cyan(target)}` : 'Pushing to upstream';
   const spinner = ora(spinnerText).start();
@@ -667,6 +696,7 @@ async function pushCommits(remote: string, force: boolean = false, setUpstream?:
 // pull helpers
 // ---------------------------------------------------------------------------
 async function pullChanges(remote?: string, rebase: boolean = false): Promise<void> {
+  if (remote) validateNotFlag(remote, 'remote name');
   const spinnerText = remote ? `Pulling from ${chalk.cyan(remote)}` : 'Pulling from upstream';
   const spinner = ora(spinnerText).start();
 
@@ -699,6 +729,7 @@ async function pullChanges(remote?: string, rebase: boolean = false): Promise<vo
 // merge helpers
 // ---------------------------------------------------------------------------
 async function mergeBranch(branch: string, squash: boolean = false): Promise<void> {
+  validateNotFlag(branch, 'branch name');
   const spinner = ora(`Merging ${chalk.cyan(branch)}`).start();
 
   try {
@@ -749,6 +780,7 @@ async function abortMerge(): Promise<void> {
 // rebase helpers
 // ---------------------------------------------------------------------------
 async function rebaseBranch(branch: string): Promise<void> {
+  validateNotFlag(branch, 'branch name');
   const spinner = ora(`Rebasing onto ${chalk.cyan(branch)}`).start();
 
   try {
@@ -1184,6 +1216,7 @@ async function initRepo(directory: string, message?: string): Promise<void> {
 // tag helpers
 // ---------------------------------------------------------------------------
 async function createTag(name: string, message?: string): Promise<void> {
+  validateNotFlag(name, 'tag name');
   const spinner = ora(`Creating tag ${chalk.cyan(name)}`).start();
 
   try {
@@ -1234,6 +1267,7 @@ async function listTags(): Promise<void> {
 // fetch helpers
 // ---------------------------------------------------------------------------
 async function fetchChanges(remote?: string): Promise<void> {
+  if (remote) validateNotFlag(remote, 'remote name');
   const spinnerText = remote ? `Fetching from ${chalk.cyan(remote)}` : 'Fetching from all remotes';
   const spinner = ora(spinnerText).start();
 
@@ -1296,10 +1330,11 @@ async function resetChanges(mode: 'soft' | 'mixed' | 'hard'): Promise<void> {
 // revert helpers
 // ---------------------------------------------------------------------------
 async function revertCommit(commit: string): Promise<void> {
+  validateNotFlag(commit, 'commit hash');
   const spinner = ora(`Reverting commit ${chalk.cyan(commit)}`).start();
 
   try {
-    await git.raw(['revert', '--no-edit', commit]);
+    await git.raw(['revert', '--no-edit', '--', commit]);
     spinner.succeed(chalk.green(`Reverted commit '${commit}'`));
   } catch (err) {
     spinner.fail(chalk.red(`Failed to revert '${commit}'`));
@@ -1341,10 +1376,11 @@ async function continueRevert(): Promise<void> {
 // cherry-pick helpers
 // ---------------------------------------------------------------------------
 async function cherryPickCommit(commit: string): Promise<void> {
+  validateNotFlag(commit, 'commit hash');
   const spinner = ora(`Cherry-picking ${chalk.cyan(commit)}`).start();
 
   try {
-    await git.raw(['cherry-pick', commit]);
+    await git.raw(['cherry-pick', '--', commit]);
     spinner.succeed(chalk.green(`Cherry-picked commit '${commit}'`));
   } catch (err) {
     spinner.fail(chalk.red(`Failed to cherry-pick '${commit}'`));
@@ -1386,6 +1422,7 @@ async function continueCherryPick(): Promise<void> {
 // config helpers
 // ---------------------------------------------------------------------------
 async function getConfig(key: string): Promise<void> {
+  validateConfigKey(key);
   try {
     const value = await git.getConfig(key);
     if (value.value) {
@@ -1401,6 +1438,7 @@ async function getConfig(key: string): Promise<void> {
 }
 
 async function setConfig(key: string, value: string): Promise<void> {
+  validateConfigKey(key);
   const spinner = ora(`Setting ${chalk.cyan(key)} = ${chalk.cyan(value)}`).start();
 
   try {

@@ -1,6 +1,6 @@
 {
   "name": "@coder11125/omg",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Oh My Git - a friendly CLI wrapper for common git tasks",
   "type": "module",
   "bin": {
@@ -40,7 +40,7 @@
     "commander",
     "simple-git"
   ],
-  "author": "",
+  "author": "coder11125",
   "license": "MIT",
   "dependencies": {
     "chalk": "^5.3.0",
