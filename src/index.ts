@@ -258,6 +258,74 @@ program
   });
 
 // ---------------------------------------------------------------------------
+// init subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('init [directory]')
+  .description(
+    'initialize a new git repository\n' +
+    '  [directory]        optional directory (defaults to current)',
+  )
+  .option('-m, --message <msg>', 'create initial commit with message')
+  .action(async (directory?: string, options?: { message?: string }) => {
+    await initRepo(directory ?? '.', options?.message);
+  });
+
+// ---------------------------------------------------------------------------
+// tag subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('tag [name]')
+  .description(
+    'create or list tags\n' +
+    '  (no args)          list all tags\n' +
+    '  <name>             create lightweight tag\n' +
+    '  <name> -m <msg>    create annotated tag',
+  )
+  .option('-m, --message <msg>', 'annotated tag message')
+  .action(async (name?: string, options?: { message?: string }) => {
+    if (name) {
+      await createTag(name, options?.message);
+    } else {
+      await listTags();
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// fetch subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('fetch [remote]')
+  .description(
+    'download objects and refs from remote\n' +
+    '  (no args)          fetch from all remotes\n' +
+    '  <remote>           fetch from specific remote',
+  )
+  .action(async (remote?: string) => {
+    await fetchChanges(remote);
+  });
+
+// ---------------------------------------------------------------------------
+// reset subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('reset [mode]')
+  .description(
+    'reset current HEAD to specified state\n' +
+    '  (no mode)          unstage files (mixed)\n' +
+    '  --soft             keep changes staged\n' +
+    '  --hard             discard all changes (dangerous)',
+  )
+  .option('--soft', 'keep changes staged')
+  .option('--hard', 'discard all changes')
+  .action(async (mode?: string, options?: { soft?: boolean; hard?: boolean }) => {
+    let resetMode: 'soft' | 'mixed' | 'hard' = 'mixed';
+    if (options?.soft) resetMode = 'soft';
+    if (options?.hard) resetMode = 'hard';
+    await resetChanges(resetMode);
+  });
+
+// ---------------------------------------------------------------------------
 // root-level action helpers
 // ---------------------------------------------------------------------------
 async function checkoutBranch(branch: string): Promise<void> {
@@ -994,7 +1062,7 @@ async function performUpdate(version: string): Promise<void> {
 }
 
 async function updateOmg(): Promise<void> {
-  const currentVersion = '0.2.1'; // Hardcoded from package.json
+  const currentVersion = '0.2.3'; // Hardcoded from package.json
 
   const spinner = ora('Checking for updates').start();
   const latestVersion = await getLatestVersion();
@@ -1015,6 +1083,143 @@ async function updateOmg(): Promise<void> {
     await performUpdate(latestVersion);
   } else {
     spinner.warn(chalk.yellow(`Running a newer version than published (${currentVersion} > ${latestVersion})`));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// init helpers
+// ---------------------------------------------------------------------------
+async function initRepo(directory: string, message?: string): Promise<void> {
+  const spinner = ora(`Initializing git repository in ${chalk.cyan(directory)}`).start();
+
+  try {
+    const targetGit = directory === '.' ? git : simpleGit(directory);
+    await targetGit.init();
+
+    if (message) {
+      spinner.text = 'Creating initial commit';
+      await targetGit.add('.');
+      await targetGit.commit(message);
+      spinner.succeed(chalk.green(`Initialized and committed: ${message}`));
+    } else {
+      spinner.succeed(chalk.green(`Initialized empty git repository in ${directory}`));
+    }
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to initialize repository'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// tag helpers
+// ---------------------------------------------------------------------------
+async function createTag(name: string, message?: string): Promise<void> {
+  const spinner = ora(`Creating tag ${chalk.cyan(name)}`).start();
+
+  try {
+    if (message) {
+      await git.addAnnotatedTag(name, message);
+      spinner.succeed(chalk.green(`Created annotated tag '${name}'`));
+    } else {
+      await git.addTag(name);
+      spinner.succeed(chalk.green(`Created lightweight tag '${name}'`));
+    }
+  } catch (err) {
+    spinner.fail(chalk.red(`Failed to create tag '${name}'`));
+    const msg = formatError(err);
+    if (msg.includes('already exists')) {
+      console.error(chalk.red(`Tag '${name}' already exists`));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+async function listTags(): Promise<void> {
+  const spinner = ora('Fetching tags').start();
+
+  try {
+    const tags = await git.tags();
+    spinner.stop();
+
+    if (!tags || tags.all.length === 0) {
+      console.log(chalk.yellow('No tags found.'));
+      return;
+    }
+
+    console.log(chalk.bold('\nTags:\n'));
+    for (const tag of tags.all) {
+      console.log(`  ${chalk.cyan(tag)}`);
+    }
+    console.log('');
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to list tags'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// fetch helpers
+// ---------------------------------------------------------------------------
+async function fetchChanges(remote?: string): Promise<void> {
+  const spinnerText = remote ? `Fetching from ${chalk.cyan(remote)}` : 'Fetching from all remotes';
+  const spinner = ora(spinnerText).start();
+
+  try {
+    if (remote) {
+      await git.fetch(remote);
+    } else {
+      await git.fetch();
+    }
+    spinner.succeed(chalk.green('Fetch complete'));
+  } catch (err) {
+    spinner.fail(chalk.red('Fetch failed'));
+    const msg = formatError(err);
+    if (msg.includes('not a git repository')) {
+      console.error(chalk.red('Not a git repository'));
+    } else if (msg.includes('no remote')) {
+      console.error(chalk.red('No remote configured. Add one with: omg remote <url>'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// reset helpers
+// ---------------------------------------------------------------------------
+async function resetChanges(mode: 'soft' | 'mixed' | 'hard'): Promise<void> {
+  const modeDescriptions = {
+    soft: 'Keep changes staged',
+    mixed: 'Unstage files',
+    hard: 'Discard all changes',
+  };
+  const spinnerText = `Resetting (${modeDescriptions[mode]})`;
+  const spinner = ora(spinnerText).start();
+
+  try {
+    const options: string[] = [`--${mode}`];
+    await git.reset(options);
+
+    const messages = {
+      soft: 'Reset to HEAD (changes staged)',
+      mixed: 'Unstaged all changes',
+      hard: 'Discarded all changes',
+    };
+
+    spinner.succeed(chalk.green(messages[mode]));
+
+    if (mode === 'hard') {
+      console.log(chalk.yellow('⚠ All uncommitted changes have been lost'));
+    }
+  } catch (err) {
+    spinner.fail(chalk.red('Reset failed'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
   }
 }
 

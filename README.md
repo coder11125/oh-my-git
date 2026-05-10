@@ -154,6 +154,45 @@ Update omg to the latest version from npm:
 omg update       # check for updates and install if newer version available
 ```
 
+### Init
+
+Initialize a new git repository:
+
+```bash
+omg init                    # initialize in current directory
+omg init my-project         # initialize in new directory
+omg init -m "Initial commit" # initialize with first commit
+```
+
+### Tag
+
+Create and list tags:
+
+```bash
+omg tag                     # list all tags
+omg tag v1.0.0              # create lightweight tag
+omg tag v1.0.0 -m "Release"  # create annotated tag
+```
+
+### Fetch
+
+Download objects and refs from remote:
+
+```bash
+omg fetch                   # fetch from all remotes
+omg fetch origin            # fetch from specific remote
+```
+
+### Reset
+
+Reset current HEAD to specified state:
+
+```bash
+omg reset                   # unstage files (mixed)
+omg reset --soft            # keep changes staged
+omg reset --hard            # discard all changes (dangerous!)
+```
+
 ## Development
 
 ```bash
