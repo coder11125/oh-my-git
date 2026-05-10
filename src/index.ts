@@ -1,10 +1,23 @@
 #!/usr/bin/env node
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { Command } from 'commander';
 import { simpleGit, type SimpleGit } from 'simple-git';
 import chalk from 'chalk';
 import ora from 'ora';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+
+const PACKAGE_VERSION = (() => {
+  const pkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version?: unknown };
+  const v = pkg.version;
+  if (typeof v !== 'string' || !v.trim()) {
+    throw new Error(`omg: "${pkgPath}" must contain a non-empty string "version"`);
+  }
+  return v;
+})();
 
 interface CliOptions {
   visit?: string;
@@ -24,7 +37,7 @@ const program = new Command();
 program
   .name('omg')
   .description('Oh My Git - a friendly CLI wrapper for common git tasks')
-  .version('0.2.0', '-V, --version', 'output the current version')
+  .version(PACKAGE_VERSION, '-V, --version', 'output the current version')
   .option('-v, --visit <branch>', 'checkout the specified branch')
   .option('-c, --commit <message>', 'stage all changes and commit with a message')
   .action(async (opts: CliOptions) => {
@@ -1118,7 +1131,7 @@ async function performUpdate(version: string): Promise<void> {
 }
 
 async function updateOmg(): Promise<void> {
-  const currentVersion = '0.2.4'; // Hardcoded from package.json
+  const currentVersion = PACKAGE_VERSION;
 
   const spinner = ora('Checking for updates').start();
   const latestVersion = await getLatestVersion();
