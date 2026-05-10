@@ -3,6 +3,8 @@ import { Command } from 'commander';
 import { simpleGit, type SimpleGit } from 'simple-git';
 import chalk from 'chalk';
 import ora from 'ora';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
 interface CliOptions {
   visit?: string;
@@ -243,6 +245,16 @@ program
   .argument('[index]', 'stash index for drop/apply (e.g., 0)')
   .action(async (subcommand?: string, index?: string) => {
     await handleStash(subcommand, index);
+  });
+
+// ---------------------------------------------------------------------------
+// update subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('update')
+  .description('update omg to the latest version from npm')
+  .action(async () => {
+    await updateOmg();
   });
 
 // ---------------------------------------------------------------------------
@@ -920,6 +932,89 @@ async function stashApply(index?: string): Promise<void> {
       console.error(chalk.red(msg));
     }
     process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// update helpers
+// ---------------------------------------------------------------------------
+const execAsync = promisify(exec);
+
+interface NpmRegistryResponse {
+  version: string;
+}
+
+async function getLatestVersion(): Promise<string | null> {
+  try {
+    const response = await fetch('https://registry.npmjs.org/@coder11125/omg/latest');
+    if (!response.ok) {
+      return null;
+    }
+    const data = await response.json() as NpmRegistryResponse;
+    return data.version;
+  } catch {
+    return null;
+  }
+}
+
+function compareVersions(current: string, latest: string): number {
+  const currentParts = current.split('.').map(Number);
+  const latestParts = latest.split('.').map(Number);
+
+  for (let i = 0; i < Math.max(currentParts.length, latestParts.length); i++) {
+    const currentPart = currentParts[i] || 0;
+    const latestPart = latestParts[i] || 0;
+
+    if (latestPart > currentPart) return 1;
+    if (latestPart < currentPart) return -1;
+  }
+
+  return 0;
+}
+
+async function performUpdate(version: string): Promise<void> {
+  const spinner = ora(`Updating omg to ${chalk.cyan(version)}`).start();
+
+  try {
+    await execAsync('npm install -g @coder11125/omg');
+    spinner.succeed(chalk.green(`Updated to version ${version}`));
+  } catch (err) {
+    spinner.fail(chalk.red('Update failed'));
+    const msg = formatError(err);
+    if (msg.includes('EACCES') || msg.includes('permission')) {
+      console.error(chalk.red('Permission denied. Try running with sudo:'));
+      console.error(chalk.yellow('  sudo omg update'));
+    } else if (msg.includes('npm')) {
+      console.error(chalk.red('npm command failed. Is npm installed?'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+async function updateOmg(): Promise<void> {
+  const currentVersion = '0.2.0'; // Hardcoded from package.json
+
+  const spinner = ora('Checking for updates').start();
+  const latestVersion = await getLatestVersion();
+
+  if (!latestVersion) {
+    spinner.fail(chalk.red('Could not fetch latest version'));
+    console.error(chalk.red('Check your internet connection and try again.'));
+    process.exitCode = 1;
+    return;
+  }
+
+  const comparison = compareVersions(currentVersion, latestVersion);
+
+  if (comparison === 0) {
+    spinner.succeed(chalk.green(`Already up-to-date (${currentVersion})`));
+  } else if (comparison < 0) {
+    spinner.stop();
+    await performUpdate(latestVersion);
+  } else {
+    spinner.warn(chalk.yellow(`Running a newer version than published (${currentVersion} > ${latestVersion})`));
   }
 }
 

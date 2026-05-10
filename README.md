@@ -146,6 +146,14 @@ omg --help       # show help
 omg --version    # show version (also -V)
 ```
 
+### Update
+
+Update omg to the latest version from npm:
+
+```bash
+omg update       # check for updates and install if newer version available
+```
+
 ## Development
 
 ```bash
