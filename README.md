@@ -1,5 +1,8 @@
 # Oh My Git (`omg`)
 
+<img width="700" height="375" alt="Oh-My-Git" src="https://github.com/user-attachments/assets/ec43e95c-538f-4d78-996b-2d4424942f03" />
+
+---
 > *Because git is powerful... and power corrupts absolutely.*
 
 `omg` is a friendly CLI wrapper that translates git's cryptic error messages into human speak. Built with [commander](https://github.com/tj/commander.js), [simple-git](https://github.com/steveukx/git-js), [chalk](https://github.com/chalk/chalk), and [ora](https://github.com/sindresorhus/ora).
