@@ -1134,8 +1134,8 @@ function compareVersions(current: string, latest: string): number {
     const currentPart = currentParts[i] || 0;
     const latestPart = latestParts[i] || 0;
 
-    if (latestPart > currentPart) return 1;
-    if (latestPart < currentPart) return -1;
+    if (currentPart > latestPart) return 1;
+    if (currentPart < latestPart) return -1;
   }
 
   return 0;
