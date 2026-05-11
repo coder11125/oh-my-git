@@ -163,6 +163,42 @@ omg oops unadd src/index.ts   # unstage specific file
 omg oops restore-branch       # list deleted branches to recover
 ```
 
+### Sync
+
+Refresh your workspace in one command:
+
+```bash
+omg sync                      # sync with main (stash → checkout main → pull → prune → return → pop)
+omg sync -b develop           # sync with a different base branch
+```
+
+Sync automatically:
+- Stashes any uncommitted changes
+- Switches to main (or your base branch)
+- Pulls latest with rebase
+- Prunes stale remote branches
+- Returns to your feature branch
+- Restores your stashed changes
+
+### Doctor
+
+Check repository health and catch issues early:
+
+```bash
+omg doctor                    # run health checks
+omg doctor --fix              # auto-fix issues where safe
+```
+
+Doctor checks for:
+- Uncommitted changes
+- Staged but uncommitted files
+- Branch behind/ahead status
+- No remote configured
+- Merge/rebase in progress
+- Detached HEAD state
+- Binary files in commits
+- Accumulating stashes
+
 ### Combine flags
 
 Flags can be combined in a single invocation, e.g. commit then switch:

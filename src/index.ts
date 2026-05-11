@@ -1454,6 +1454,30 @@ program
   });
 
 // ---------------------------------------------------------------------------
+// sync subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('sync')
+  .description(
+    'refresh your workspace: stash → checkout main → pull → prune → return → pop',
+  )
+  .option('-b, --branch <name>', 'base branch to sync from (default: main)', 'main')
+  .action(async (options: { branch: string }) => {
+    await syncWorkspace(options.branch);
+  });
+
+// ---------------------------------------------------------------------------
+// doctor subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('doctor')
+  .description('check repository health and catch common issues')
+  .option('--fix', 'attempt to auto-fix issues where safe')
+  .action(async (options: { fix?: boolean }) => {
+    await runDoctor(options.fix ?? false);
+  });
+
+// ---------------------------------------------------------------------------
 // ship helpers
 // ---------------------------------------------------------------------------
 interface ShipStatus {
@@ -1799,6 +1823,412 @@ async function handleOops(action: string | undefined, file?: string): Promise<vo
       console.log(chalk.dim('Available actions: uncommit, unstage, unadd <file>, restore-branch'));
       process.exitCode = 1;
   }
+}
+
+// ---------------------------------------------------------------------------
+// sync helpers
+// ---------------------------------------------------------------------------
+interface SyncState {
+  originalBranch: string;
+  hadStash: boolean;
+  stashMessage: string;
+}
+
+async function syncWorkspace(baseBranch: string): Promise<void> {
+  console.log(chalk.bold('\n🔄  Syncing workspace...\n'));
+
+  const state: SyncState = {
+    originalBranch: '',
+    hadStash: false,
+    stashMessage: `omg-sync-${Date.now()}`,
+  };
+
+  // Step 1: Get current branch and check status
+  const checkSpinner = ora('Checking repository state').start();
+  try {
+    const status = await git.status();
+    state.originalBranch = status.current ?? 'HEAD';
+
+    // Check if on a branch (not detached HEAD)
+    if (state.originalBranch === 'HEAD') {
+      checkSpinner.fail(chalk.red('Cannot sync in detached HEAD state'));
+      console.error(chalk.red('Checkout a branch first'));
+      process.exitCode = 1;
+      return;
+    }
+
+    checkSpinner.succeed(`On branch ${chalk.cyan(state.originalBranch)}`);
+  } catch (err) {
+    checkSpinner.fail(chalk.red('Failed to check repository'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+    return;
+  }
+
+  // Don't sync if already on base branch
+  if (state.originalBranch === baseBranch) {
+    console.log(chalk.yellow(`Already on ${baseBranch}. Just pulling updates...`));
+    await pullAndPrune(baseBranch);
+    return;
+  }
+
+  // Step 2: Stash if needed (check again after initial status check)
+  const currentStatus = await git.status();
+  const hasChanges = currentStatus.modified.length > 0 || currentStatus.deleted.length > 0 ||
+                     currentStatus.not_added.length > 0 || currentStatus.staged.length > 0;
+
+  if (hasChanges) {
+    const stashSpinner = ora('Stashing local changes').start();
+    try {
+      const stashResult = await git.stash(['save', state.stashMessage]);
+      // Check if stash actually saved something (git returns "No local changes to save" if nothing to stash)
+      if (stashResult && typeof stashResult === 'string' && stashResult.includes('No local changes')) {
+        stashSpinner.warn('No changes to stash');
+        state.hadStash = false;
+      } else {
+        state.hadStash = true;
+        stashSpinner.succeed('Changes stashed');
+      }
+    } catch (err) {
+      const msg = formatError(err);
+      if (msg.includes('No local changes') || msg.includes('nothing to commit')) {
+        stashSpinner.warn('No changes to stash');
+        state.hadStash = false;
+      } else {
+        stashSpinner.fail(chalk.red('Failed to stash'));
+        console.error(chalk.red(msg));
+        process.exitCode = 1;
+        return;
+      }
+    }
+  }
+
+  // Step 3: Checkout base branch
+  const checkoutSpinner = ora(`Switching to ${chalk.cyan(baseBranch)}`).start();
+  try {
+    await git.checkout(baseBranch);
+    checkoutSpinner.succeed(`Switched to ${baseBranch}`);
+  } catch (err) {
+    checkoutSpinner.fail(chalk.red(`Failed to checkout ${baseBranch}`));
+    const msg = formatError(err);
+    if (msg.includes('did not match')) {
+      console.error(chalk.red(`Branch '${baseBranch}' not found`));
+      console.error(chalk.dim(`Try: omg sync -b master  (or main, develop, etc.)`));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+    return;
+  }
+
+  // Step 4: Pull and prune
+  const success = await pullAndPrune(baseBranch);
+  if (!success) {
+    // Try to go back to original branch even if pull failed
+    await git.checkout(state.originalBranch).catch(() => { /* ignore */ });
+    if (state.hadStash) {
+      await git.stash(['pop']).catch(() => { /* ignore */ });
+    }
+    return;
+  }
+
+  // Step 5: Go back to original branch
+  const returnSpinner = ora(`Returning to ${chalk.cyan(state.originalBranch)}`).start();
+  try {
+    await git.checkout(state.originalBranch);
+    returnSpinner.succeed(`Back on ${state.originalBranch}`);
+  } catch (err) {
+    returnSpinner.fail(chalk.red('Failed to return to original branch'));
+    console.error(chalk.red(formatError(err)));
+    console.error(chalk.yellow(`You are now on ${baseBranch}. Manual recovery needed.`));
+    process.exitCode = 1;
+    return;
+  }
+
+  // Step 6: Pop stash
+  if (state.hadStash) {
+    const popSpinner = ora('Restoring stashed changes').start();
+    try {
+      await git.stash(['pop']);
+      popSpinner.succeed('Changes restored');
+    } catch (err) {
+      popSpinner.fail(chalk.red('Failed to restore stash'));
+      console.error(chalk.red(formatError(err)));
+      console.error(chalk.yellow('Your changes are in the stash. Run: omg stash pop'));
+      process.exitCode = 1;
+      return;
+    }
+  }
+
+  // Step 7: Suggest rebase if behind
+  const finalStatus = await git.status();
+  if (finalStatus.behind > 0) {
+    console.log(chalk.dim(`\n💡  Your branch is ${finalStatus.behind} commit${finalStatus.behind > 1 ? 's' : ''} behind ${baseBranch}`));
+    console.log(chalk.dim(`   Run: omg ship  (to rebase and push)`));
+  }
+
+  console.log(chalk.green('\n✅  Sync complete!\n'));
+}
+
+async function pullAndPrune(branch: string): Promise<boolean> {
+  // Pull with rebase
+  const pullSpinner = ora(`Pulling latest ${branch}`).start();
+  try {
+    await git.pull(['--rebase']);
+    pullSpinner.succeed(`${branch} is up to date`);
+  } catch (err) {
+    pullSpinner.fail(chalk.red(`Failed to pull ${branch}`));
+    const msg = formatError(err);
+    if (msg.includes('conflicts')) {
+      console.error(chalk.red('Merge conflicts. Resolve them and run sync again.'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+    return false;
+  }
+
+  // Prune stale remote branches
+  const pruneSpinner = ora('Pruning stale remote branches').start();
+  try {
+    await git.raw(['remote', 'prune', 'origin']);
+    pruneSpinner.succeed('Pruned stale branches');
+  } catch (err) {
+    pruneSpinner.warn(chalk.yellow('Could not prune (no remote?)'));
+    // Don't fail here, just warn
+  }
+
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// doctor helpers
+// ---------------------------------------------------------------------------
+interface HealthIssue {
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  fixable: boolean;
+  autoFix?: () => Promise<boolean>;
+}
+
+async function runDoctor(autoFix: boolean): Promise<void> {
+  console.log(chalk.bold('\n🏥  Running health checks...\n'));
+
+  const issues: HealthIssue[] = [];
+  const spinner = ora('Analyzing repository').start();
+
+  try {
+    // Check 1: Uncommitted changes
+    const status = await git.status();
+    if (status.modified.length > 0 || status.deleted.length > 0 || status.not_added.length > 0) {
+      issues.push({
+        severity: 'warning',
+        message: `${status.modified.length + status.deleted.length + status.not_added.length} uncommitted file(s)`,
+        fixable: true,
+        autoFix: async () => {
+          console.log(chalk.dim('   Staging all changes...'));
+          await git.add('.');
+          return true;
+        },
+      });
+    }
+
+    // Check 2: Staged but not committed
+    if (status.staged.length > 0) {
+      issues.push({
+        severity: 'warning',
+        message: `${status.staged.length} staged file(s) not committed`,
+        fixable: false,
+      });
+    }
+
+    // Check 3: Branch is behind (capture status values for autoFix closure)
+    if (status.behind > 0) {
+      const currentBranch = status.current;
+      const trackingBranch = status.tracking;
+      issues.push({
+        severity: status.behind > 10 ? 'error' : 'warning',
+        message: `Branch is ${status.behind} commit(s) behind remote`,
+        fixable: true,
+        autoFix: async () => {
+          console.log(chalk.dim('   Fetching and rebasing...'));
+          await git.fetch();
+          const rebaseTarget = trackingBranch ?? `origin/${currentBranch}`;
+          await git.rebase([rebaseTarget]);
+          return true;
+        },
+      });
+    }
+
+    // Check 4: Branch is ahead (needs push)
+    if (status.ahead > 0) {
+      issues.push({
+        severity: 'info',
+        message: `Branch is ${status.ahead} commit(s) ahead of remote (needs push)`,
+        fixable: false,
+      });
+    }
+
+    // Check 5: No remote configured
+    const remotes = await git.getRemotes();
+    if (remotes.length === 0) {
+      issues.push({
+        severity: 'error',
+        message: 'No remote repository configured',
+        fixable: false,
+      });
+    }
+
+    // Check 6: Merge in progress
+    try {
+      const mergeHead = await git.raw(['rev-parse', '--quiet', '--verify', 'MERGE_HEAD']);
+      if (mergeHead) {
+        issues.push({
+          severity: 'error',
+          message: 'Merge in progress (unresolved conflicts?)',
+          fixable: false,
+        });
+      }
+    } catch {
+      // No merge in progress, that's fine
+    }
+
+    // Check 7: Rebase in progress (simplified check using git status)
+    if (status.conflicted.length > 0) {
+      // Check if we're in a rebase by looking for .git/rebase-merge or .git/rebase-apply
+      try {
+        const { existsSync } = await import('fs');
+        const { join, dirname } = await import('path');
+        const gitDir = await git.raw(['rev-parse', '--git-dir']);
+        const gitDirPath = gitDir.trim();
+        if (existsSync(join(gitDirPath, 'rebase-merge')) || existsSync(join(gitDirPath, 'rebase-apply'))) {
+          issues.push({
+            severity: 'error',
+            message: 'Rebase in progress',
+            fixable: false,
+          });
+        }
+      } catch {
+        // Can't determine, skip this check
+      }
+    }
+
+    // Check 8: Detached HEAD
+    if (!status.current) {
+      issues.push({
+        severity: 'error',
+        message: 'In detached HEAD state',
+        fixable: false,
+      });
+    }
+
+    // Check 9: Large files in recent commits
+    try {
+      const recentFiles = await git.raw(['diff-tree', '-r', '--name-only', '--no-commit-id', 'HEAD']);
+      if (recentFiles) {
+        const files = recentFiles.split('\n').filter(f => f.trim());
+        // This is a simplified check - real implementation would check file sizes
+        if (files.some(f => f.match(/\.(zip|tar|gz|exe|dll|so|dylib)$/i))) {
+          issues.push({
+            severity: 'warning',
+            message: 'Binary files detected in recent commit (consider git-lfs)',
+            fixable: false,
+          });
+        }
+      }
+    } catch {
+      // Can't check, ignore
+    }
+
+    // Check 10: Old stashes
+    try {
+      const stashList = await git.stash(['list']);
+      const stashCount = stashList.split('\n').filter(l => l.trim()).length;
+      if (stashCount > 5) {
+        issues.push({
+          severity: 'warning',
+          message: `${stashCount} stashes accumulating (consider cleaning up)`,
+          fixable: false,
+        });
+      }
+    } catch {
+      // Can't check stashes
+    }
+
+    spinner.succeed('Health check complete');
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to run health checks'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+    return;
+  }
+
+  // Display results
+  if (issues.length === 0) {
+    console.log(chalk.green('\n✅  Repository is healthy!\n'));
+    return;
+  }
+
+  console.log(chalk.bold(`\nFound ${issues.length} issue(s):\n`));
+
+  const errors = issues.filter(i => i.severity === 'error');
+  const warnings = issues.filter(i => i.severity === 'warning');
+  const infos = issues.filter(i => i.severity === 'info');
+
+  for (const issue of errors) {
+    console.log(`  ${chalk.red('✖')} ${issue.message}`);
+    if (autoFix && issue.fixable && issue.autoFix) {
+      const fixSpinner = ora('  Attempting auto-fix...').start();
+      try {
+        const fixed = await issue.autoFix();
+        if (fixed) {
+          fixSpinner.succeed(chalk.green('  Fixed!'));
+        } else {
+          fixSpinner.fail(chalk.red('  Could not auto-fix'));
+        }
+      } catch (fixErr) {
+        fixSpinner.fail(chalk.red(`  Fix failed: ${formatError(fixErr)}`));
+      }
+    }
+  }
+
+  for (const issue of warnings) {
+    console.log(`  ${chalk.yellow('⚠')} ${issue.message}`);
+    if (autoFix && issue.fixable && issue.autoFix) {
+      const fixSpinner = ora('  Attempting auto-fix...').start();
+      try {
+        const fixed = await issue.autoFix();
+        if (fixed) {
+          fixSpinner.succeed(chalk.green('  Fixed!'));
+        } else {
+          fixSpinner.fail(chalk.red('  Could not auto-fix'));
+        }
+      } catch (fixErr) {
+        fixSpinner.fail(chalk.red(`  Fix failed: ${formatError(fixErr)}`));
+      }
+    }
+  }
+
+  for (const issue of infos) {
+    console.log(`  ${chalk.blue('ℹ')} ${issue.message}`);
+  }
+
+  console.log('');
+
+  // Summary
+  if (errors.length > 0) {
+    console.log(chalk.red(`\n⚠  ${errors.length} error(s) need attention`));
+    if (!autoFix) {
+      console.log(chalk.dim('   Run with --fix to attempt auto-fix where safe'));
+    }
+    process.exitCode = 1;
+  } else if (warnings.length > 0) {
+    console.log(chalk.yellow(`\n⚠  ${warnings.length} warning(s) found`));
+  } else {
+    console.log(chalk.green('\n✅  All clear (informational items only)'));
+  }
+
+  console.log('');
 }
 
 // ---------------------------------------------------------------------------
