@@ -55,15 +55,82 @@ function validateConfigKey(key: string): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// nerd error handling
+// ---------------------------------------------------------------------------
+interface NerdErrorMapping {
+  pattern: RegExp;
+  command: string;
+  context?: string;
+}
+
+const ERROR_MAPPINGS: NerdErrorMapping[] = [
+  { pattern: /not a git repository/i, command: 'omg init' },
+  { pattern: /no upstream branch/i, command: 'omg push -u origin <branch>' },
+  { pattern: /merge conflict/i, command: 'omg merge --abort', context: 'or resolve conflicts manually' },
+  { pattern: /rebase conflict/i, command: 'omg rebase --abort', context: 'or use --continue after resolving' },
+  { pattern: /not fully merged/i, command: 'omg branch -D <branch>', context: 'force delete unmerged branch' },
+  { pattern: /no remote/i, command: 'omg remote <url>' },
+  { pattern: /uncommitted changes/i, command: 'omg -c "message"', context: 'stage and commit first' },
+  { pattern: /local changes/i, command: 'omg stash', context: 'stash changes first' },
+  { pattern: /no stash entries/i, command: 'omg stash', context: 'create a stash first' },
+  { pattern: /already exists/i, command: 'omg doctor', context: 'check for issues' },
+  { pattern: /detached HEAD/i, command: 'omg oops restore-branch' },
+  { pattern: /conflict/i, command: 'omg doctor', context: 'resolve conflicts' },
+  { pattern: /permission denied/i, command: 'omg doctor' },
+  { pattern: /could not resolve host/i, command: 'omg doctor', context: 'check network/remote' },
+];
+
+let verboseMode = false;
+
+function setVerbose(verbose: boolean): void {
+  verboseMode = verbose;
+}
+
+function handleNerdError(err: unknown, context?: string): void {
+  const rawMessage = formatError(err);
+
+  // Find matching error pattern
+  for (const mapping of ERROR_MAPPINGS) {
+    if (mapping.pattern.test(rawMessage)) {
+      const cmd = context ? mapping.command.replace('<branch>', context) : mapping.command;
+      let output = `${chalk.magenta('(OMG)')} 🤓 Nerd Error hidden: Run ${chalk.cyan(cmd)} to solve it`;
+
+      if (mapping.context) {
+        output += chalk.dim(` (${mapping.context})`);
+      }
+
+      console.error(output);
+
+      if (verboseMode) {
+        console.error(chalk.dim('\nDetails:'));
+        console.error(chalk.dim(rawMessage));
+      }
+      return;
+    }
+  }
+
+  // Fallback for unmapped errors
+  console.error(`${chalk.magenta('(OMG)')} 🤓 Nerd Error hidden: Run ${chalk.cyan('omg doctor')} to diagnose`);
+
+  if (verboseMode) {
+    console.error(chalk.dim('\nDetails:'));
+    console.error(chalk.dim(rawMessage));
+  }
+}
+
 const program = new Command();
 
 program
   .name('omg')
   .description('Oh My Git - a friendly CLI wrapper for common git tasks')
   .version(PACKAGE_VERSION, '-V, --version', 'output the current version')
-  .option('-v, --visit <branch>', 'checkout the specified branch')
+  .option('--verbose', 'show detailed error output (show nerd errors)')
+  .option('--visit <branch>', 'checkout the specified branch')
   .option('-c, --commit <message>', 'stage all changes and commit with a message')
-  .action(async (opts: CliOptions) => {
+  .action(async (opts: CliOptions & { verbose?: boolean }) => {
+    // Set verbose mode globally
+    setVerbose(opts.verbose ?? false);
     let didSomething = false;
 
     if (opts.visit) {
@@ -80,6 +147,14 @@ program
       program.help();
     }
   });
+
+// Hook to set verbose mode before any command runs
+program.hook('preAction', (thisCommand) => {
+  const opts = thisCommand.opts();
+  if (opts.verbose !== undefined) {
+    setVerbose(opts.verbose);
+  }
+});
 
 // ---------------------------------------------------------------------------
 // branch subcommand
@@ -428,7 +503,7 @@ async function checkoutBranch(branch: string): Promise<void> {
     spinner.succeed(chalk.green(`Switched to branch '${branch}'`));
   } catch (err) {
     spinner.fail(chalk.red(`Failed to checkout '${branch}'`));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -443,7 +518,7 @@ async function stageAndCommit(message: string): Promise<void> {
     spinner.succeed(chalk.green(`Committed${sha}`));
   } catch (err) {
     spinner.fail(chalk.red('Commit failed'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -476,7 +551,7 @@ async function listBranches(): Promise<void> {
     console.log('');
   } catch (err) {
     spinner.fail(chalk.red('Could not list branches'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -510,7 +585,7 @@ async function createBranch(name: string, switchAfter: boolean): Promise<void> {
     }
   } catch (err) {
     spinner.fail(chalk.red(`Failed to create branch '${name}'`));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -541,7 +616,7 @@ async function deleteBranch(name: string): Promise<void> {
       );
     } else {
       spinner.fail(chalk.red(`Failed to delete '${name}'`));
-      console.error(chalk.red(msg));
+      handleNerdError(err, name);
     }
     process.exitCode = 1;
   }
@@ -571,7 +646,7 @@ async function listRemotes(): Promise<void> {
     console.log('');
   } catch (err) {
     spinner.fail(chalk.red('Could not list remotes'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -593,7 +668,7 @@ async function addRemote(url: string, name: string): Promise<void> {
     spinner.succeed(chalk.green(`Added remote '${name}'`));
   } catch (err) {
     spinner.fail(chalk.red(`Failed to add remote '${name}'`));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -653,7 +728,7 @@ async function showStatus(): Promise<void> {
     console.log('');
   } catch (err) {
     spinner.fail(chalk.red('Could not fetch status'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -685,8 +760,9 @@ async function pushCommits(remote: string, force: boolean = false, setUpstream?:
     const msg = formatError(err);
     if (msg.includes('no upstream branch')) {
       console.error(chalk.red('No upstream configured. Use -u flag to set upstream.'));
+      handleNerdError(err);
     } else {
-      console.error(chalk.red(msg));
+      handleNerdError(err);
     }
     process.exitCode = 1;
   }
@@ -713,14 +789,7 @@ async function pullChanges(remote?: string, rebase: boolean = false): Promise<vo
     }
   } catch (err) {
     spinner.fail(chalk.red('Pull failed'));
-    const msg = formatError(err);
-    if (msg.includes('merge conflicts')) {
-      console.error(chalk.red('Merge conflicts detected. Resolve conflicts and commit.'));
-    } else if (msg.includes('local changes')) {
-      console.error(chalk.red('You have uncommitted changes. Stash or commit them first.'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -747,12 +816,10 @@ async function mergeBranch(branch: string, squash: boolean = false): Promise<voi
   } catch (err) {
     spinner.fail(chalk.red('Merge failed'));
     const msg = formatError(err);
-    if (msg.includes('conflicts')) {
-      console.error(chalk.red('Merge conflicts detected. Resolve conflicts and commit, or use --abort to cancel.'));
-    } else if (msg.includes('already up to date')) {
+    if (msg.includes('already up to date')) {
       console.log(chalk.yellow('Already up to date.'));
     } else {
-      console.error(chalk.red(msg));
+      handleNerdError(err);
     }
     process.exitCode = 1;
   }
@@ -766,12 +833,7 @@ async function abortMerge(): Promise<void> {
     spinner.succeed(chalk.green('Merge aborted'));
   } catch (err) {
     spinner.fail(chalk.red('Failed to abort merge'));
-    const msg = formatError(err);
-    if (msg.includes('no merge')) {
-      console.error(chalk.red('No merge in progress'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -788,12 +850,7 @@ async function rebaseBranch(branch: string): Promise<void> {
     spinner.succeed(chalk.green(`Rebased onto '${branch}'`));
   } catch (err) {
     spinner.fail(chalk.red('Rebase failed'));
-    const msg = formatError(err);
-    if (msg.includes('conflicts')) {
-      console.error(chalk.red('Rebase conflicts detected. Resolve conflicts, then use --continue or --abort.'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -806,14 +863,7 @@ async function continueRebase(): Promise<void> {
     spinner.succeed(chalk.green('Rebase completed'));
   } catch (err) {
     spinner.fail(chalk.red('Failed to continue rebase'));
-    const msg = formatError(err);
-    if (msg.includes('no rebase')) {
-      console.error(chalk.red('No rebase in progress'));
-    } else if (msg.includes('conflicts')) {
-      console.error(chalk.red('Unresolved conflicts remain. Resolve them first.'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -826,12 +876,7 @@ async function abortRebase(): Promise<void> {
     spinner.succeed(chalk.green('Rebase aborted'));
   } catch (err) {
     spinner.fail(chalk.red('Failed to abort rebase'));
-    const msg = formatError(err);
-    if (msg.includes('no rebase')) {
-      console.error(chalk.red('No rebase in progress'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -870,7 +915,7 @@ async function showLog(count: number, oneline: boolean): Promise<void> {
     console.log('');
   } catch (err) {
     spinner.fail(chalk.red('Failed to fetch log'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -922,7 +967,7 @@ async function showDiff(file: string | undefined, staged: boolean): Promise<void
     console.log('');
   } catch (err) {
     spinner.fail(chalk.red('Failed to fetch diff'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -950,14 +995,7 @@ async function cloneRepo(url: string, directory?: string): Promise<void> {
     console.log(chalk.dim(`  cd ${targetDir} && omg status`));
   } catch (err) {
     spinner.fail(chalk.red('Clone failed'));
-    const msg = formatError(err);
-    if (msg.includes('already exists')) {
-      console.error(chalk.red(`Directory '${targetDir}' already exists.`));
-    } else if (msg.includes('not found') || msg.includes('does not exist')) {
-      console.error(chalk.red('Repository not found. Check the URL.'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1002,7 +1040,7 @@ async function stashSave(): Promise<void> {
     }
   } catch (err) {
     spinner.fail(chalk.red('Failed to stash changes'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1015,14 +1053,7 @@ async function stashPop(): Promise<void> {
     spinner.succeed(chalk.green('Stash popped'));
   } catch (err) {
     spinner.fail(chalk.red('Failed to pop stash'));
-    const msg = formatError(err);
-    if (msg.includes('No stash entries')) {
-      console.error(chalk.red('No stash entries found'));
-    } else if (msg.includes('conflicts')) {
-      console.error(chalk.red('Conflicts when applying stash. Resolve conflicts manually.'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1047,7 +1078,7 @@ async function stashList(): Promise<void> {
     console.log('');
   } catch (err) {
     spinner.fail(chalk.red('Failed to list stashes'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1067,12 +1098,7 @@ async function stashDrop(index?: string): Promise<void> {
     spinner.succeed(chalk.green(`Dropped ${stashRef}`));
   } catch (err) {
     spinner.fail(chalk.red(`Failed to drop ${stashRef}`));
-    const msg = formatError(err);
-    if (msg.includes('Invalid reflog')) {
-      console.error(chalk.red(`Invalid stash index: ${index ?? 0}`));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err, index ?? '0');
     process.exitCode = 1;
   }
 }
@@ -1092,14 +1118,7 @@ async function stashApply(index?: string): Promise<void> {
     spinner.succeed(chalk.green(`Applied ${stashRef}`));
   } catch (err) {
     spinner.fail(chalk.red(`Failed to apply ${stashRef}`));
-    const msg = formatError(err);
-    if (msg.includes('Invalid reflog')) {
-      console.error(chalk.red(`Invalid stash index: ${index ?? 0}`));
-    } else if (msg.includes('conflicts')) {
-      console.error(chalk.red('Conflicts when applying stash. Resolve conflicts manually.'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err, index ?? '0');
     process.exitCode = 1;
   }
 }
@@ -1149,15 +1168,7 @@ async function performUpdate(version: string): Promise<void> {
     spinner.succeed(chalk.green(`Updated to version ${version}`));
   } catch (err) {
     spinner.fail(chalk.red('Update failed'));
-    const msg = formatError(err);
-    if (msg.includes('EACCES') || msg.includes('permission')) {
-      console.error(chalk.red('Permission denied. Try running with sudo:'));
-      console.error(chalk.yellow('  sudo omg update'));
-    } else if (msg.includes('npm')) {
-      console.error(chalk.red('npm command failed. Is npm installed?'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1207,7 +1218,7 @@ async function initRepo(directory: string, message?: string): Promise<void> {
     }
   } catch (err) {
     spinner.fail(chalk.red('Failed to initialize repository'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1229,12 +1240,7 @@ async function createTag(name: string, message?: string): Promise<void> {
     }
   } catch (err) {
     spinner.fail(chalk.red(`Failed to create tag '${name}'`));
-    const msg = formatError(err);
-    if (msg.includes('already exists')) {
-      console.error(chalk.red(`Tag '${name}' already exists`));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err, name);
     process.exitCode = 1;
   }
 }
@@ -1258,7 +1264,7 @@ async function listTags(): Promise<void> {
     console.log('');
   } catch (err) {
     spinner.fail(chalk.red('Failed to list tags'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1280,14 +1286,7 @@ async function fetchChanges(remote?: string): Promise<void> {
     spinner.succeed(chalk.green('Fetch complete'));
   } catch (err) {
     spinner.fail(chalk.red('Fetch failed'));
-    const msg = formatError(err);
-    if (msg.includes('not a git repository')) {
-      console.error(chalk.red('Not a git repository'));
-    } else if (msg.includes('no remote')) {
-      console.error(chalk.red('No remote configured. Add one with: omg remote <url>'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1321,7 +1320,7 @@ async function resetChanges(mode: 'soft' | 'mixed' | 'hard'): Promise<void> {
     }
   } catch (err) {
     spinner.fail(chalk.red('Reset failed'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1338,16 +1337,7 @@ async function revertCommit(commit: string): Promise<void> {
     spinner.succeed(chalk.green(`Reverted commit '${commit}'`));
   } catch (err) {
     spinner.fail(chalk.red(`Failed to revert '${commit}'`));
-    const msg = formatError(err);
-    if (msg.includes('conflicts')) {
-      console.error(chalk.red('Merge conflicts detected. Resolve conflicts, then use: omg revert --continue'));
-    } else if (msg.includes('is a merge')) {
-      console.error(chalk.red('Cannot revert merge commit automatically. Use git revert -m 1 <commit>'));
-    } else if (msg.includes('already reverted')) {
-      console.log(chalk.yellow('This commit may have already been reverted.'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err, commit);
     process.exitCode = 1;
   }
 }
@@ -1360,14 +1350,7 @@ async function continueRevert(): Promise<void> {
     spinner.succeed(chalk.green('Revert completed'));
   } catch (err) {
     spinner.fail(chalk.red('Failed to continue revert'));
-    const msg = formatError(err);
-    if (msg.includes('no revert')) {
-      console.error(chalk.red('No revert in progress'));
-    } else if (msg.includes('conflicts')) {
-      console.error(chalk.red('Unresolved conflicts remain. Resolve them first.'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1384,16 +1367,7 @@ async function cherryPickCommit(commit: string): Promise<void> {
     spinner.succeed(chalk.green(`Cherry-picked commit '${commit}'`));
   } catch (err) {
     spinner.fail(chalk.red(`Failed to cherry-pick '${commit}'`));
-    const msg = formatError(err);
-    if (msg.includes('conflicts')) {
-      console.error(chalk.red('Merge conflicts detected. Resolve conflicts, then use: omg cherry-pick --continue'));
-    } else if (msg.includes('already exists')) {
-      console.error(chalk.yellow('This commit is already in the current branch.'));
-    } else if (msg.includes('empty')) {
-      console.error(chalk.yellow('This cherry-pick would result in an empty commit.'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err, commit);
     process.exitCode = 1;
   }
 }
@@ -1406,14 +1380,7 @@ async function continueCherryPick(): Promise<void> {
     spinner.succeed(chalk.green('Cherry-pick completed'));
   } catch (err) {
     spinner.fail(chalk.red('Failed to continue cherry-pick'));
-    const msg = formatError(err);
-    if (msg.includes('no cherry-pick')) {
-      console.error(chalk.red('No cherry-pick in progress'));
-    } else if (msg.includes('conflicts')) {
-      console.error(chalk.red('Unresolved conflicts remain. Resolve them first.'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1517,7 +1484,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
     spinner.succeed(`On branch ${chalk.cyan(shipStatus.branch)}`);
   } catch (err) {
     spinner.fail(chalk.red('Failed to analyze repository'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
     return;
   }
@@ -1538,7 +1505,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
           stepSpinner.succeed(`Committed: ${chalk.cyan(message)}${result.commit ? ` (${result.commit.slice(0, 7)})` : ''}`);
         } catch (err) {
           stepSpinner.fail(chalk.red('Commit failed'));
-          console.error(chalk.red(formatError(err)));
+          handleNerdError(err);
           process.exitCode = 1;
           return;
         }
@@ -1555,7 +1522,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
             stepSpinner.succeed('Staged all changes');
           } catch (err) {
             stepSpinner.fail(chalk.red('Failed to stage'));
-            console.error(chalk.red(formatError(err)));
+            handleNerdError(err);
             process.exitCode = 1;
             return;
           }
@@ -1576,12 +1543,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
       fetchSpinner.succeed('Fetched latest changes');
     } catch (err) {
       fetchSpinner.fail(chalk.red('Fetch failed'));
-      const msg = formatError(err);
-      if (msg.includes('no remote')) {
-        console.error(chalk.red('No remote configured. Add one with: omg remote <url>'));
-      } else {
-        console.error(chalk.red(msg));
-      }
+      handleNerdError(err);
       process.exitCode = 1;
       return;
     }
@@ -1607,7 +1569,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
           rebaseSpinner.succeed(`Rebased ${shipStatus.behind} commit${shipStatus.behind > 1 ? 's' : ''}`);
         } catch (err) {
           rebaseSpinner.fail(chalk.red('Rebase failed'));
-          console.error(chalk.red('Conflicts detected. Resolve them, then run: omg rebase --continue'));
+          handleNerdError(err);
           process.exitCode = 1;
           return;
         }
@@ -1622,7 +1584,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
           mergeSpinner.succeed(`Merged ${shipStatus.behind} commit${shipStatus.behind > 1 ? 's' : ''}`);
         } catch (err) {
           mergeSpinner.fail(chalk.red('Merge failed'));
-          console.error(chalk.red('Conflicts detected. Resolve them and commit.'));
+          handleNerdError(err);
           process.exitCode = 1;
           return;
         }
@@ -1644,12 +1606,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
       pushSpinner.succeed(chalk.green(`Shipped to ${chalk.cyan('origin/' + shipStatus.branch)}`));
     } catch (err) {
       pushSpinner.fail(chalk.red('Push failed'));
-      const msg = formatError(err);
-      if (msg.includes('rejected')) {
-        console.error(chalk.red('Push was rejected. Run `omg ship` again to sync and retry.'));
-      } else {
-        console.error(chalk.red(msg));
-      }
+      handleNerdError(err);
       process.exitCode = 1;
       return;
     }
@@ -1710,12 +1667,7 @@ async function oopsUncommit(keepChanges: boolean): Promise<void> {
     }
   } catch (err) {
     spinner.fail(chalk.red('Failed to undo commit'));
-    const msg = formatError(err);
-    if (msg.includes('unknown revision')) {
-      console.error(chalk.red('No commits to undo'));
-    } else {
-      console.error(chalk.red(msg));
-    }
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1728,7 +1680,7 @@ async function oopsUnstage(): Promise<void> {
     console.log(chalk.dim('  Your changes are preserved but unstaged'));
   } catch (err) {
     spinner.fail(chalk.red('Failed to unstage'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1740,7 +1692,7 @@ async function oopsUnadd(file: string): Promise<void> {
     spinner.succeed(chalk.green(`Unstaged ${file}`));
   } catch (err) {
     spinner.fail(chalk.red(`Failed to unstage '${file}'`));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1782,7 +1734,7 @@ async function oopsRestoreBranch(): Promise<void> {
     console.log(chalk.dim('\nTo restore: git checkout -b <branch-name> <sha>'));
   } catch (err) {
     spinner.fail(chalk.red('Failed to check reflog'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -1860,7 +1812,7 @@ async function syncWorkspace(baseBranch: string): Promise<void> {
     checkSpinner.succeed(`On branch ${chalk.cyan(state.originalBranch)}`);
   } catch (err) {
     checkSpinner.fail(chalk.red('Failed to check repository'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
     return;
   }
@@ -1939,7 +1891,7 @@ async function syncWorkspace(baseBranch: string): Promise<void> {
     returnSpinner.succeed(`Back on ${state.originalBranch}`);
   } catch (err) {
     returnSpinner.fail(chalk.red('Failed to return to original branch'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     console.error(chalk.yellow(`You are now on ${baseBranch}. Manual recovery needed.`));
     process.exitCode = 1;
     return;
@@ -1953,7 +1905,7 @@ async function syncWorkspace(baseBranch: string): Promise<void> {
       popSpinner.succeed('Changes restored');
     } catch (err) {
       popSpinner.fail(chalk.red('Failed to restore stash'));
-      console.error(chalk.red(formatError(err)));
+      handleNerdError(err);
       console.error(chalk.yellow('Your changes are in the stash. Run: omg stash pop'));
       process.exitCode = 1;
       return;
@@ -2158,7 +2110,7 @@ async function runDoctor(autoFix: boolean): Promise<void> {
     spinner.succeed('Health check complete');
   } catch (err) {
     spinner.fail(chalk.red('Failed to run health checks'));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
     return;
   }
@@ -2245,7 +2197,7 @@ async function getConfig(key: string): Promise<void> {
     }
   } catch (err) {
     console.error(chalk.red(`Failed to get config '${key}'`));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -2259,7 +2211,7 @@ async function setConfig(key: string, value: string): Promise<void> {
     spinner.succeed(chalk.green(`Set '${key}' to '${value}'`));
   } catch (err) {
     spinner.fail(chalk.red(`Failed to set config '${key}'`));
-    console.error(chalk.red(formatError(err)));
+    handleNerdError(err);
     process.exitCode = 1;
   }
 }
@@ -2273,6 +2225,6 @@ function formatError(err: unknown): string {
 }
 
 program.parseAsync(process.argv).catch((err: unknown) => {
-  console.error(chalk.red(formatError(err)));
+  handleNerdError(err);
   process.exit(1);
 });

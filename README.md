@@ -31,7 +31,7 @@ omg -c "message"
 Switch to an existing branch:
 
 ```bash
-omg -v <branch>
+omg --visit <branch>
 ```
 
 ### Status
@@ -204,14 +204,15 @@ Doctor checks for:
 Flags can be combined in a single invocation, e.g. commit then switch:
 
 ```bash
-omg -c "wip: refactor" -v feature/new-thing
+omg -c "wip: refactor" --visit feature/new-thing
 ```
 
 ### Other
 
 ```bash
-omg --help       # show help
-omg --version    # show version (also -V)
+omg --help        # show help
+omg --version     # show version (also -V)
+omg --verbose     # show detailed error output (show nerd errors)
 ```
 
 ### Update
@@ -286,6 +287,22 @@ Get or set git configuration:
 ```bash
 omg config user.name         # get current value
 omg config user.name "John"  # set value
+```
+
+### Verbose Mode
+
+By default, `omg` hides technical git errors and shows friendly "Nerd Error" messages with suggestions on how to fix the issue:
+
+```bash
+omg push                    # if error: "(OMG) 🤓 Nerd Error hidden: Run omg push -u origin main to solve it"
+```
+
+Use `--verbose` to see the full technical error details:
+
+```bash
+omg status --verbose        # show detailed error output
+omg push --verbose          # show full git error messages
+omg --verbose -c "message"  # combine with other commands
 ```
 
 ## Development
