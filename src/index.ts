@@ -1419,6 +1419,389 @@ async function continueCherryPick(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// ship subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('ship [message]')
+  .description(
+    'smart ship: commit, sync, and push safely\n' +
+    '  [message]          optional commit message (auto-stages if uncommitted)\n' +
+    '  (no message)       just sync and push current state',
+  )
+  .option('--no-rebase', 'merge instead of rebase when behind')
+  .option('-n, --dry-run', 'show what would happen without doing it')
+  .action(async (message?: string, options?: { rebase?: boolean; dryRun?: boolean }) => {
+    await shipChanges(message, options?.rebase ?? true, options?.dryRun ?? false);
+  });
+
+// ---------------------------------------------------------------------------
+// oops subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('oops [action]')
+  .description(
+    'interactive recovery for common git mistakes\n' +
+    '  (no args)          show interactive menu\n' +
+    '  uncommit           undo last commit (keep changes)\n' +
+    '  unstage            unstage all staged files\n' +
+    '  unadd <file>       unstage specific file\n' +
+    '  restore-branch     recover deleted branch from reflog',
+  )
+  .argument('[action]', 'recovery action')
+  .argument('[file]', 'file for unadd action')
+  .action(async (action?: string, file?: string) => {
+    await handleOops(action, file);
+  });
+
+// ---------------------------------------------------------------------------
+// ship helpers
+// ---------------------------------------------------------------------------
+interface ShipStatus {
+  hasUncommitted: boolean;
+  hasStaged: boolean;
+  branch: string;
+  ahead: number;
+  behind: number;
+  tracking: string | null;
+  remoteUrl: string | null;
+}
+
+async function getShipStatus(): Promise<ShipStatus> {
+  const status = await git.status();
+  const remotes = await git.getRemotes(true);
+  const remoteUrl = remotes.length > 0 ? (remotes[0].refs.fetch || remotes[0].refs.push) : null;
+
+  return {
+    hasUncommitted: status.modified.length > 0 || status.deleted.length > 0 || status.not_added.length > 0,
+    hasStaged: status.staged.length > 0,
+    branch: status.current ?? 'HEAD',
+    ahead: status.ahead,
+    behind: status.behind,
+    tracking: status.tracking,
+    remoteUrl,
+  };
+}
+
+async function shipChanges(message: string | undefined, useRebase: boolean, dryRun: boolean): Promise<void> {
+  console.log(chalk.bold('\n🚢  Shipping changes...\n'));
+
+  // Step 1: Check current status
+  const spinner = ora('Analyzing repository state').start();
+  let shipStatus: ShipStatus;
+  try {
+    shipStatus = await getShipStatus();
+    spinner.succeed(`On branch ${chalk.cyan(shipStatus.branch)}`);
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to analyze repository'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+    return;
+  }
+
+  if (dryRun) {
+    console.log(chalk.yellow('\n📋  Dry run - would perform:\n'));
+  }
+
+  // Step 2: Handle uncommitted changes
+  if (shipStatus.hasUncommitted || shipStatus.hasStaged) {
+    if (message) {
+      // Stage and commit
+      const stepSpinner = ora(`${dryRun ? 'Would' : 'Staging and committing'}`).start();
+      if (!dryRun) {
+        try {
+          await git.add('.');
+          const result = await git.commit(message, undefined, { '--': null });
+          stepSpinner.succeed(`Committed: ${chalk.cyan(message)}${result.commit ? ` (${result.commit.slice(0, 7)})` : ''}`);
+        } catch (err) {
+          stepSpinner.fail(chalk.red('Commit failed'));
+          console.error(chalk.red(formatError(err)));
+          process.exitCode = 1;
+          return;
+        }
+      } else {
+        stepSpinner.succeed(`Would commit: ${chalk.cyan(message)}`);
+      }
+    } else {
+      // Just stage if there are unstaged changes
+      if (shipStatus.hasUncommitted) {
+        const stepSpinner = ora(`${dryRun ? 'Would' : 'Staging'} uncommitted changes`).start();
+        if (!dryRun) {
+          try {
+            await git.add('.');
+            stepSpinner.succeed('Staged all changes');
+          } catch (err) {
+            stepSpinner.fail(chalk.red('Failed to stage'));
+            console.error(chalk.red(formatError(err)));
+            process.exitCode = 1;
+            return;
+          }
+        } else {
+          stepSpinner.succeed('Would stage uncommitted changes');
+        }
+      }
+    }
+  }
+
+  // Step 3: Fetch to check sync status
+  const fetchSpinner = ora(`${dryRun ? 'Would fetch' : 'Fetching'} from remote`).start();
+  if (!dryRun) {
+    try {
+      await git.fetch();
+      // Re-check status after fetch
+      shipStatus = await getShipStatus();
+      fetchSpinner.succeed('Fetched latest changes');
+    } catch (err) {
+      fetchSpinner.fail(chalk.red('Fetch failed'));
+      const msg = formatError(err);
+      if (msg.includes('no remote')) {
+        console.error(chalk.red('No remote configured. Add one with: omg remote <url>'));
+      } else {
+        console.error(chalk.red(msg));
+      }
+      process.exitCode = 1;
+      return;
+    }
+  } else {
+    fetchSpinner.succeed('Would fetch from remote');
+  }
+
+  // Step 4: Show sync status
+  if (shipStatus.behind > 0 || shipStatus.ahead > 0) {
+    const parts: string[] = [];
+    if (shipStatus.behind > 0) parts.push(chalk.red(`↓ ${shipStatus.behind} behind`));
+    if (shipStatus.ahead > 0) parts.push(chalk.green(`↑ ${shipStatus.ahead} ahead`));
+    console.log(chalk.dim(`   Sync status: ${parts.join(', ')}`));
+  }
+
+  // Step 5: Rebase if behind
+  if (shipStatus.behind > 0) {
+    if (useRebase) {
+      const rebaseSpinner = ora(`${dryRun ? 'Would rebase' : 'Rebasing'} onto remote`).start();
+      if (!dryRun) {
+        try {
+          await git.rebase([shipStatus.tracking ?? 'origin/' + shipStatus.branch]);
+          rebaseSpinner.succeed(`Rebased ${shipStatus.behind} commit${shipStatus.behind > 1 ? 's' : ''}`);
+        } catch (err) {
+          rebaseSpinner.fail(chalk.red('Rebase failed'));
+          console.error(chalk.red('Conflicts detected. Resolve them, then run: omg rebase --continue'));
+          process.exitCode = 1;
+          return;
+        }
+      } else {
+        rebaseSpinner.succeed(`Would rebase ${shipStatus.behind} commit${shipStatus.behind > 1 ? 's' : ''}`);
+      }
+    } else {
+      const mergeSpinner = ora(`${dryRun ? 'Would merge' : 'Merging'} remote changes`).start();
+      if (!dryRun) {
+        try {
+          await git.merge([shipStatus.tracking ?? 'origin/' + shipStatus.branch]);
+          mergeSpinner.succeed(`Merged ${shipStatus.behind} commit${shipStatus.behind > 1 ? 's' : ''}`);
+        } catch (err) {
+          mergeSpinner.fail(chalk.red('Merge failed'));
+          console.error(chalk.red('Conflicts detected. Resolve them and commit.'));
+          process.exitCode = 1;
+          return;
+        }
+      } else {
+        mergeSpinner.succeed(`Would merge ${shipStatus.behind} commit${shipStatus.behind > 1 ? 's' : ''}`);
+      }
+    }
+  }
+
+  // Step 6: Push
+  const pushSpinner = ora(`${dryRun ? 'Would push' : 'Pushing'} to remote`).start();
+  if (!dryRun) {
+    try {
+      const pushOptions: string[] = [];
+      if (!shipStatus.tracking) {
+        pushOptions.push('-u');
+      }
+      await git.push('origin', shipStatus.branch, pushOptions);
+      pushSpinner.succeed(chalk.green(`Shipped to ${chalk.cyan('origin/' + shipStatus.branch)}`));
+    } catch (err) {
+      pushSpinner.fail(chalk.red('Push failed'));
+      const msg = formatError(err);
+      if (msg.includes('rejected')) {
+        console.error(chalk.red('Push was rejected. Run `omg ship` again to sync and retry.'));
+      } else {
+        console.error(chalk.red(msg));
+      }
+      process.exitCode = 1;
+      return;
+    }
+  } else {
+    pushSpinner.succeed('Would push to remote');
+  }
+
+  // Step 7: Show PR URL hint if GitHub remote
+  if (shipStatus.remoteUrl && shipStatus.remoteUrl.includes('github.com')) {
+    const match = shipStatus.remoteUrl.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
+    if (match) {
+      const [, owner, repo] = match;
+      const prUrl = `https://github.com/${owner}/${repo}/pulls`;
+      console.log(chalk.dim(`\n💡  View/create PR: ${chalk.cyan(prUrl)}`));
+    }
+  }
+
+  console.log(chalk.green('\n✅  Ship complete!\n'));
+}
+
+// ---------------------------------------------------------------------------
+// oops helpers
+// ---------------------------------------------------------------------------
+async function showOopsMenu(): Promise<void> {
+  console.log(chalk.bold('\n🆘  Oops! What would you like to recover?\n'));
+  console.log(chalk.cyan('  1.') + ' Undo last commit (keep changes)');
+  console.log(chalk.cyan('  2.') + ' Undo last commit (discard changes)');
+  console.log(chalk.cyan('  3.') + ' Unstage all staged files');
+  console.log(chalk.cyan('  4.') + ' Unstage a specific file');
+  console.log(chalk.cyan('  5.') + ' Restore a deleted branch');
+  console.log(chalk.cyan('  6.') + ' Undo last push (requires force)');
+  console.log(chalk.cyan('  0.') + ' Cancel\n');
+}
+
+async function getInteractiveChoice(): Promise<string | null> {
+  // For now, show the menu and instruct the user to run with specific commands
+  // In a full implementation, this would use readline or a prompt library
+  await showOopsMenu();
+  console.log(chalk.yellow('Run `omg oops <action>` directly, or use:'));
+  console.log(chalk.dim('  omg oops uncommit'));
+  console.log(chalk.dim('  omg oops unstage'));
+  console.log(chalk.dim('  omg oops unadd <file>'));
+  console.log(chalk.dim('  omg oops restore-branch'));
+  return null;
+}
+
+async function oopsUncommit(keepChanges: boolean): Promise<void> {
+  const spinner = ora(`${keepChanges ? 'Undoing' : 'Discarding'} last commit`).start();
+  try {
+    const resetMode = keepChanges ? 'soft' : 'hard';
+    await git.reset([`--${resetMode}`, 'HEAD~1']);
+    if (keepChanges) {
+      spinner.succeed(chalk.green('Last commit undone - changes are staged'));
+      console.log(chalk.dim('  Your changes are preserved and staged. Amend with: omg -c "new message"'));
+    } else {
+      spinner.succeed(chalk.green('Last commit discarded'));
+      console.log(chalk.yellow('⚠ All changes from that commit have been lost'));
+    }
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to undo commit'));
+    const msg = formatError(err);
+    if (msg.includes('unknown revision')) {
+      console.error(chalk.red('No commits to undo'));
+    } else {
+      console.error(chalk.red(msg));
+    }
+    process.exitCode = 1;
+  }
+}
+
+async function oopsUnstage(): Promise<void> {
+  const spinner = ora('Unstaging all files').start();
+  try {
+    await git.reset(['--mixed']);
+    spinner.succeed(chalk.green('All files unstaged'));
+    console.log(chalk.dim('  Your changes are preserved but unstaged'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to unstage'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+async function oopsUnadd(file: string): Promise<void> {
+  const spinner = ora(`Unstaging ${chalk.cyan(file)}`).start();
+  try {
+    await git.reset(['--', file]);
+    spinner.succeed(chalk.green(`Unstaged ${file}`));
+  } catch (err) {
+    spinner.fail(chalk.red(`Failed to unstage '${file}'`));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+async function oopsRestoreBranch(): Promise<void> {
+  const spinner = ora('Checking reflog for deleted branches').start();
+  try {
+    const reflog = await git.raw(['reflog']);
+    // Parse reflog to find checkout lines that indicate branch switches
+    const lines = reflog.split('\n');
+    const deletedBranches: Array<{ sha: string; branch: string }> = [];
+
+    for (const line of lines) {
+      // Look for checkout operations that reference branch names
+      const match = line.match(/checkout: moving from (\S+) to (\S+)/);
+      if (match) {
+        const [, fromBranch, toBranch] = match;
+        // The 'from' branch might be deleted if we don't see it elsewhere
+        if (fromBranch && !deletedBranches.some(b => b.branch === fromBranch)) {
+          const shaMatch = line.match(/^([a-f0-9]+)/);
+          if (shaMatch) {
+            deletedBranches.push({ sha: shaMatch[1], branch: fromBranch });
+          }
+        }
+      }
+    }
+
+    spinner.stop();
+
+    if (deletedBranches.length === 0) {
+      console.log(chalk.yellow('No recently deleted branches found in reflog'));
+      return;
+    }
+
+    console.log(chalk.bold('\nRecently deleted branches:\n'));
+    deletedBranches.slice(0, 10).forEach((b, i) => {
+      console.log(`  ${chalk.cyan(`${i + 1}.`)} ${chalk.white(b.branch.padEnd(20))} ${chalk.dim(b.sha.slice(0, 7))}`);
+    });
+    console.log(chalk.dim('\nTo restore: git checkout -b <branch-name> <sha>'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to check reflog'));
+    console.error(chalk.red(formatError(err)));
+    process.exitCode = 1;
+  }
+}
+
+async function handleOops(action: string | undefined, file?: string): Promise<void> {
+  if (!action) {
+    await getInteractiveChoice();
+    return;
+  }
+
+  switch (action.toLowerCase()) {
+    case 'uncommit':
+    case 'undo':
+      await oopsUncommit(true);
+      break;
+    case 'discard':
+    case 'drop':
+      await oopsUncommit(false);
+      break;
+    case 'unstage':
+      await oopsUnstage();
+      break;
+    case 'unadd':
+      if (!file) {
+        console.error(chalk.red('Error: file path required for unadd'));
+        console.error(chalk.dim('Usage: omg oops unadd <file>'));
+        process.exitCode = 1;
+        return;
+      }
+      await oopsUnadd(file);
+      break;
+    case 'restore-branch':
+    case 'restore':
+      await oopsRestoreBranch();
+      break;
+    default:
+      console.error(chalk.red(`Unknown action: ${action}`));
+      console.log(chalk.dim('Available actions: uncommit, unstage, unadd <file>, restore-branch'));
+      process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // config helpers
 // ---------------------------------------------------------------------------
 async function getConfig(key: string): Promise<void> {

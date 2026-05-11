@@ -131,6 +131,38 @@ omg clone <url>              # clone to default directory
 omg clone <url> my-project     # clone to custom directory
 ```
 
+### Ship
+
+Smart workflow: stage, commit, sync, and push safely in one command:
+
+```bash
+omg ship "fix: handle null pointer"     # commit and ship
+omg ship                                # just sync and push
+omg ship -n                             # dry run - preview what would happen
+omg ship --no-rebase                    # use merge instead of rebase
+```
+
+Ship automatically:
+- Stages uncommitted changes
+- Commits with your message (if provided)
+- Fetches from remote to check sync status
+- Rebases if you're behind (no merge commits!)
+- Pushes to origin
+- Shows PR URL hint for GitHub remotes
+
+### Oops
+
+Interactive recovery for common git mistakes:
+
+```bash
+omg oops                      # show recovery menu
+omg oops uncommit             # undo last commit, keep changes
+omg oops discard              # undo last commit, discard changes
+omg oops unstage              # unstage all staged files
+omg oops unadd src/index.ts   # unstage specific file
+omg oops restore-branch       # list deleted branches to recover
+```
+
 ### Combine flags
 
 Flags can be combined in a single invocation, e.g. commit then switch:
