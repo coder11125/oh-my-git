@@ -2217,6 +2217,196 @@ async function setConfig(key: string, value: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// blame subcommand
+// ---------------------------------------------------------------------------
+program
+  .command('blame <file>')
+  .description(
+    'show line-by-line authorship of a file\n' +
+    '  <file>             file to blame\n' +
+    '  -L <line>          show specific line\n' +
+    '  -s, --stats        show author statistics',
+  )
+  .option('-L, --line <number>', 'show blame for specific line only')
+  .option('-s, --stats', 'show author statistics instead of line-by-line')
+  .action(async (file: string, options: { line?: string; stats?: boolean }) => {
+    await showBlame(file, options.line ? parseInt(options.line, 10) : undefined, options.stats ?? false);
+  });
+
+// ---------------------------------------------------------------------------
+// blame helpers
+// ---------------------------------------------------------------------------
+async function showBlame(file: string, lineNum?: number, showStats: boolean = false): Promise<void> {
+  validateNotFlag(file, 'file path');
+  const spinner = ora(`Analyzing ${chalk.cyan(file)}`).start();
+
+  try {
+    const blameData = await git.raw(['blame', file]);
+    spinner.stop();
+
+    if (showStats) {
+      await showBlameStats(blameData, file);
+    } else if (lineNum !== undefined) {
+      showBlameLine(blameData, file, lineNum);
+    } else {
+      showBlameFull(blameData, file);
+    }
+  } catch (err) {
+    spinner.fail(chalk.red(`Failed to blame '${file}'`));
+    handleNerdError(err);
+    process.exitCode = 1;
+  }
+}
+
+function showBlameFull(blameData: string, file: string): void {
+  const lines = blameData.split('\n').filter(line => line.trim());
+  
+  if (lines.length === 0) {
+    console.log(chalk.yellow(`No blame data available for ${chalk.cyan(file)}`));
+    return;
+  }
+
+  console.log(chalk.bold(`\n--- Blame: ${chalk.cyan(file)} ---\n`));
+
+  // Parse blame output
+  // Git blame format: hash (author date time timezone lineNum) content
+  const entries: Array<{
+    hash: string;
+    author: string;
+    date: string;
+    lineNum: number;
+    content: string;
+  }> = [];
+
+  for (const line of lines) {
+    // Match pattern: hash (author date time timezone lineNum) content
+    const match = line.match(/^([0-9a-f]+)\s+\(([^)]+)\)\s*(.*)$/);
+    if (match) {
+      const hash = match[1];
+      const metaPart = match[2];
+      const content = match[3];
+
+      // Parse meta part: author date time timezone lineNum
+      const metaParts = metaPart.split(/\s+/);
+      if (metaParts.length >= 4) {
+        const author = metaParts[0];
+        const date = metaParts.slice(1, metaParts.length - 1).join(' ');
+        const lineNum = parseInt(metaParts[metaParts.length - 1], 10);
+
+        entries.push({
+          hash,
+          author,
+          date,
+          lineNum,
+          content,
+        });
+      }
+    }
+  }
+
+  // Display with formatting
+  for (const entry of entries) {
+    const shortHash = entry.hash.slice(0, 7);
+    const lineNum = chalk.dim(`${entry.lineNum.toString().padStart(4)}:`);
+    const hashStr = chalk.green(shortHash);
+    const authorStr = chalk.cyan(entry.author.padEnd(15));
+    const dateStr = chalk.dim(entry.date);
+    
+    console.log(`${lineNum} ${hashStr} ${authorStr} ${dateStr} ${entry.content}`);
+  }
+
+  console.log('');
+}
+
+function showBlameLine(blameData: string, file: string, lineNum: number): void {
+  const lines = blameData.split('\n').filter(line => line.trim());
+  
+  if (lines.length === 0 || lineNum < 1 || lineNum > lines.length) {
+    console.log(chalk.yellow(`Line ${lineNum} not found in ${chalk.cyan(file)}`));
+    return;
+  }
+
+  const targetLine = lines[lineNum - 1];
+  
+  // Match pattern: hash (author date time timezone lineNum) content
+  const match = targetLine.match(/^([0-9a-f]+)\s+\(([^)]+)\)\s*(.*)$/);
+  if (match) {
+    const hash = match[1];
+    const metaPart = match[2];
+    const content = match[3];
+
+    // Parse meta part: author date time timezone lineNum
+    const metaParts = metaPart.split(/\s+/);
+    if (metaParts.length >= 4) {
+      const author = metaParts[0];
+      const date = metaParts.slice(1, metaParts.length - 1).join(' ');
+
+      console.log(chalk.bold(`\n--- Blame: ${chalk.cyan(file)}:${chalk.yellow(lineNum.toString())} ---\n`));
+      console.log(`${chalk.green('Commit:')} ${chalk.cyan(hash.slice(0, 7))} ${chalk.dim(`(${hash})`)}`);
+      console.log(`${chalk.green('Author:')} ${chalk.cyan(author)}`);
+      console.log(`${chalk.green('Date:')} ${chalk.dim(date)}`);
+      console.log(`${chalk.green('Line:')} ${content}`);
+      console.log('');
+    }
+  }
+}
+
+async function showBlameStats(blameData: string, file: string): Promise<void> {
+  const lines = blameData.split('\n').filter(line => line.trim());
+  
+  if (lines.length === 0) {
+    console.log(chalk.yellow(`No blame data available for ${chalk.cyan(file)}`));
+    return;
+  }
+
+  // Parse and count by author
+  const authorStats = new Map<string, number>();
+
+  for (const line of lines) {
+    // Match pattern: hash (author date time timezone lineNum) content
+    const match = line.match(/^([0-9a-f]+)\s+\(([^)]+)\)\s*(.*)$/);
+    if (match) {
+      const metaPart = match[2];
+      const metaParts = metaPart.split(/\s+/);
+      if (metaParts.length >= 4) {
+        const author = metaParts[0];
+        authorStats.set(author, (authorStats.get(author) || 0) + 1);
+      }
+    }
+  }
+
+  const totalLines = Array.from(authorStats.values()).reduce((a, b) => a + b, 0);
+  const sortedStats = Array.from(authorStats.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([author, count]) => ({
+      author,
+      count,
+      percentage: ((count / totalLines) * 100).toFixed(1),
+    }));
+
+  console.log(chalk.bold(`\n--- Author Statistics: ${chalk.cyan(file)} ---\n`));
+  console.log(`${chalk.dim('Total lines:')} ${totalLines}\n`);
+
+  const maxCount = sortedStats[0]?.count || 1;
+  const maxAuthorLength = Math.max(...sortedStats.map(s => s.author.length));
+
+  for (const stat of sortedStats) {
+    const barLength = Math.floor((stat.count / maxCount) * 30);
+    const bar = '█'.repeat(barLength);
+    const authorPadded = stat.author.padEnd(maxAuthorLength);
+    
+    console.log(
+      `${chalk.cyan(authorPadded)} ` +
+      `${chalk.yellow(stat.count.toString().padStart(4))} lines ` +
+      `${chalk.dim(`(${stat.percentage}%)`)} ` +
+      `${chalk.green(bar)}`
+    );
+  }
+
+  console.log('');
+}
+
+// ---------------------------------------------------------------------------
 // utilities
 // ---------------------------------------------------------------------------
 function formatError(err: unknown): string {

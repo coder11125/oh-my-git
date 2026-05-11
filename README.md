@@ -148,6 +148,18 @@ omg diff --staged            # show staged changes (what you're about to regret)
 omg diff src/index.ts        # show changes for specific file
 ```
 
+### Blame
+
+Find out who broke that line of code. Perfect for passive-aggressive code reviews:
+
+```bash
+omg blame <file>             # show line-by-line authorship
+omg blame <file> -L 42       # show blame for specific line only
+omg blame <file> --stats     # show author statistics with heatmap
+```
+
+> 💡 Pro tip: Use `--stats` to see who really owns the file. Spoiler: it's probably you from 3 years ago wondering "what was I thinking?"
+
 ### Clone
 
 Make a local copy of someone else's beautiful disaster:
