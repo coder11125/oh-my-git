@@ -329,7 +329,7 @@ $ omg push
 (OMG) 🤓 Nerd Error hidden: Run omg push -u origin main to solve it
 ```
 
-But maybe you're a masochist and want to see the raw git error. We support that too:
+But maybe you're a purist and want to see the raw git error. We support that too:
 
 ```bash
 $ omg push --verbose
