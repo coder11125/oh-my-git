@@ -1,6 +1,6 @@
 # Oh My Git (`omg`)
 
-<img width="700" height="375" alt="Oh-My-Git" src="https://github.com/user-attachments/assets/ec43e95c-538f-4d78-996b-2d4424942f03" />
+<img width="700" height="400" alt="Oh-My-Git" src="https://github.com/user-attachments/assets/ec43e95c-538f-4d78-996b-2d4424942f03" />
 
 ---
 > *Because git is powerful... and power corrupts absolutely.*
