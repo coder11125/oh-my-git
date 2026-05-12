@@ -1,11 +1,13 @@
 # Oh My Git (`omg`)
 
-<img width="700" height="400" alt="Oh-My-Git" src="https://github.com/user-attachments/assets/ec43e95c-538f-4d78-996b-2d4424942f03" />
+<div style="text-align: center;">
+  <img width="700" height="400" alt="Oh-My-Git" src="https://github.com/user-attachments/assets/ec43e95c-538f-4d78-996b-2d4424942f03" />
+</div>
 
 ---
 > *Because git is powerful... and power corrupts absolutely.*
 
-`omg` is a friendly CLI wrapper that translates git's cryptic error messages into human speak. Built with [commander](https://github.com/tj/commander.js), [simple-git](https://github.com/steveukx/git-js), [chalk](https://github.com/chalk/chalk), and [ora](https://github.com/sindresorhus/ora).
+`omg` is a friendly CLI wrapper that translates git's cryptic error messages into human speak. Built with [commander](https://github.com/tj/commander.js), [simple-git](https://github.com/steveukx/git-[...]
 
 ## Why omg?
 
@@ -405,4 +407,4 @@ omg --help
 
 Remember: `omg` won't make you a better developer. But it might make you a happier one. And isn't that what really matters?
 
-**Pro tip:** If you ever feel overwhelmed by git, just remember: Linus Torvalds created git in 2005 because existing tools weren't painful enough. You're not the problem. Git is the problem. `omg` is the aspirin.
+**Pro tip:** If you ever feel overwhelmed by git, just remember: Linus Torvalds created git in 2005 because existing tools weren't painful enough. You're not the problem. Git is the problem. `omg` is [...]
