@@ -7,7 +7,7 @@
 ---
 > *Because git is powerful... and power corrupts absolutely.*
 
-`omg` is a friendly CLI wrapper that translates git's cryptic error messages into human speak. Built with [commander](https://github.com/tj/commander.js), [simple-git](https://github.com/steveukx/git-[...]
+`omg` is a friendly CLI wrapper that translates git's cryptic error messages into human speak. Built with [commander](https://github.com/tj/commander.js), [simple-git](https://github.com/steveukx/git-js), [chalk](https://github.com/chalk/chalk), and [ora](https://github.com/sindresorhus/ora)
 
 ## Why omg?
 
