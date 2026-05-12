@@ -334,6 +334,21 @@ omg config user.name         # get current value
 omg config user.name "John"  # set value
 ```
 
+### Social
+
+See who's contributing to your repository (and who's doing all the work):
+
+```bash
+omg social                   # show contributor statistics
+```
+
+Shows:
+- All contributors with commit counts and percentages
+- "Most helpful human" award for top contributor
+- Humorous commentary about collaboration patterns
+
+> 💡 Perfect for passive-aggressive code reviews or just satisfying your curiosity about who actually owns the codebase.
+
 ### Verbose Mode (For the Curious)
 
 By default, `omg` speaks human. When git throws a tantrum, we translate:
