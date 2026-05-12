@@ -6,6 +6,7 @@ import { Command } from 'commander';
 import { simpleGit, type SimpleGit } from 'simple-git';
 import chalk from 'chalk';
 import ora from 'ora';
+import { quipSpinnerText } from './quips.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -507,7 +508,7 @@ program
 // ---------------------------------------------------------------------------
 async function checkoutBranch(branch: string): Promise<void> {
   validateNotFlag(branch, 'branch name');
-  const spinner = ora(`Checking out ${chalk.cyan(branch)}`).start();
+  const spinner = ora(quipSpinnerText('checkout', `Checking out ${chalk.cyan(branch)}`)).start();
   try {
     await git.checkout(branch);
     spinner.succeed(chalk.green(`Switched to branch '${branch}'`));
@@ -519,10 +520,10 @@ async function checkoutBranch(branch: string): Promise<void> {
 }
 
 async function stageAndCommit(message: string): Promise<void> {
-  const spinner = ora('Staging all changes').start();
+  const spinner = ora(quipSpinnerText('commit_stage', 'Staging all changes')).start();
   try {
     await git.add('.');
-    spinner.text = `Committing with message: ${chalk.cyan(message)}`;
+    spinner.text = quipSpinnerText('commit_write', `Committing with message: ${chalk.cyan(message)}`);
     const result = await git.commit(message, undefined, { '--': null });
     const sha = result.commit ? ` (${result.commit})` : '';
     spinner.succeed(chalk.green(`Committed${sha}`));
@@ -539,7 +540,7 @@ async function stageAndCommit(message: string): Promise<void> {
 
 /** Pretty-print all local branches, highlighting the current one. */
 async function listBranches(): Promise<void> {
-  const spinner = ora('Fetching branches').start();
+  const spinner = ora(quipSpinnerText('branch_list', 'Fetching branches')).start();
   try {
     const summary = await git.branchLocal();
     spinner.stop();
@@ -569,7 +570,7 @@ async function listBranches(): Promise<void> {
 /** Create a branch, optionally switching to it immediately. */
 async function createBranch(name: string, switchAfter: boolean): Promise<void> {
   validateNotFlag(name, 'branch name');
-  const spinner = ora(`Creating branch ${chalk.cyan(name)}`).start();
+  const spinner = ora(quipSpinnerText('branch_create', `Creating branch ${chalk.cyan(name)}`)).start();
   try {
     // Refuse to create if the name already exists
     const existing = await git.branchLocal();
@@ -603,7 +604,7 @@ async function createBranch(name: string, switchAfter: boolean): Promise<void> {
 /** Delete a branch with a safety guard (must be fully merged). */
 async function deleteBranch(name: string): Promise<void> {
   validateNotFlag(name, 'branch name');
-  const spinner = ora(`Deleting branch ${chalk.cyan(name)}`).start();
+  const spinner = ora(quipSpinnerText('branch_delete', `Deleting branch ${chalk.cyan(name)}`)).start();
   try {
     const summary = await git.branchLocal();
 
@@ -638,7 +639,7 @@ async function deleteBranch(name: string): Promise<void> {
 
 /** List all remotes and their fetch URLs. */
 async function listRemotes(): Promise<void> {
-  const spinner = ora('Fetching remotes').start();
+  const spinner = ora(quipSpinnerText('remote_list', 'Fetching remotes')).start();
   try {
     const remotes = await git.getRemotes(true);
     spinner.stop();
@@ -664,7 +665,7 @@ async function listRemotes(): Promise<void> {
 /** Add a new remote. */
 async function addRemote(url: string, name: string): Promise<void> {
   validateNotFlag(name, 'remote name');
-  const spinner = ora(`Adding remote ${chalk.cyan(name)} (${chalk.dim(url)})`).start();
+  const spinner = ora(quipSpinnerText('remote_add', `Adding remote ${chalk.cyan(name)} (${chalk.dim(url)})`)).start();
   try {
     // Check if remote already exists
     const remotes = await git.getRemotes();
@@ -689,7 +690,7 @@ async function addRemote(url: string, name: string): Promise<void> {
 
 /** Display a pretty summary of the current git status. */
 async function showStatus(): Promise<void> {
-  const spinner = ora('Analyzing repository status').start();
+  const spinner = ora(quipSpinnerText('status', 'Analyzing repository status')).start();
   try {
     const status = await git.status();
     spinner.stop();
@@ -751,7 +752,7 @@ async function pushCommits(remote: string, force: boolean = false, setUpstream?:
   if (setUpstream) validateNotFlag(setUpstream, 'upstream branch');
   const target = setUpstream ?? remote;
   const spinnerText = target ? `Pushing to ${chalk.cyan(target)}` : 'Pushing to upstream';
-  const spinner = ora(spinnerText).start();
+  const spinner = ora(quipSpinnerText('push', spinnerText)).start();
 
   try {
     const options: string[] = [];
@@ -784,7 +785,7 @@ async function pushCommits(remote: string, force: boolean = false, setUpstream?:
 async function pullChanges(remote?: string, rebase: boolean = false): Promise<void> {
   if (remote) validateNotFlag(remote, 'remote name');
   const spinnerText = remote ? `Pulling from ${chalk.cyan(remote)}` : 'Pulling from upstream';
-  const spinner = ora(spinnerText).start();
+  const spinner = ora(quipSpinnerText('pull', spinnerText)).start();
 
   try {
     const options: string[] = [];
@@ -809,7 +810,7 @@ async function pullChanges(remote?: string, rebase: boolean = false): Promise<vo
 // ---------------------------------------------------------------------------
 async function mergeBranch(branch: string, squash: boolean = false): Promise<void> {
   validateNotFlag(branch, 'branch name');
-  const spinner = ora(`Merging ${chalk.cyan(branch)}`).start();
+  const spinner = ora(quipSpinnerText('merge', `Merging ${chalk.cyan(branch)}`)).start();
 
   try {
     const options: string[] = [];
@@ -836,7 +837,7 @@ async function mergeBranch(branch: string, squash: boolean = false): Promise<voi
 }
 
 async function abortMerge(): Promise<void> {
-  const spinner = ora('Aborting merge').start();
+  const spinner = ora(quipSpinnerText('merge_abort', 'Aborting merge')).start();
 
   try {
     await git.raw(['merge', '--abort']);
@@ -853,7 +854,7 @@ async function abortMerge(): Promise<void> {
 // ---------------------------------------------------------------------------
 async function rebaseBranch(branch: string): Promise<void> {
   validateNotFlag(branch, 'branch name');
-  const spinner = ora(`Rebasing onto ${chalk.cyan(branch)}`).start();
+  const spinner = ora(quipSpinnerText('rebase', `Rebasing onto ${chalk.cyan(branch)}`)).start();
 
   try {
     await git.rebase([branch]);
@@ -866,7 +867,7 @@ async function rebaseBranch(branch: string): Promise<void> {
 }
 
 async function continueRebase(): Promise<void> {
-  const spinner = ora('Continuing rebase').start();
+  const spinner = ora(quipSpinnerText('rebase_continue', 'Continuing rebase')).start();
 
   try {
     await git.rebase(['--continue']);
@@ -879,7 +880,7 @@ async function continueRebase(): Promise<void> {
 }
 
 async function abortRebase(): Promise<void> {
-  const spinner = ora('Aborting rebase').start();
+  const spinner = ora(quipSpinnerText('rebase_abort', 'Aborting rebase')).start();
 
   try {
     await git.rebase(['--abort']);
@@ -895,7 +896,7 @@ async function abortRebase(): Promise<void> {
 // log helpers
 // ---------------------------------------------------------------------------
 async function showLog(count: number, oneline: boolean): Promise<void> {
-  const spinner = ora('Fetching commit history').start();
+  const spinner = ora(quipSpinnerText('log', 'Fetching commit history')).start();
 
   try {
     const options: string[] = ['-n', String(count)];
@@ -935,7 +936,7 @@ async function showLog(count: number, oneline: boolean): Promise<void> {
 // ---------------------------------------------------------------------------
 async function showDiff(file: string | undefined, staged: boolean): Promise<void> {
   const spinnerText = staged ? 'Fetching staged changes' : 'Fetching unstaged changes';
-  const spinner = ora(spinnerText).start();
+  const spinner = ora(quipSpinnerText('diff', spinnerText)).start();
 
   try {
     const options: string[] = staged ? ['--staged'] : [];
@@ -997,7 +998,7 @@ function sanitizeDirName(name: string): string {
 async function cloneRepo(url: string, directory?: string): Promise<void> {
   const rawDir = directory || url.split('/').pop()?.replace('.git', '') || 'repo';
   const targetDir = sanitizeDirName(rawDir);
-  const spinner = ora(`Cloning into ${chalk.cyan(targetDir)}`).start();
+  const spinner = ora(quipSpinnerText('clone', `Cloning into ${chalk.cyan(targetDir)}`)).start();
 
   try {
     await git.clone(url, targetDir);
@@ -1039,7 +1040,7 @@ async function handleStash(action?: string, index?: string): Promise<void> {
 }
 
 async function stashSave(): Promise<void> {
-  const spinner = ora('Stashing changes').start();
+  const spinner = ora(quipSpinnerText('stash', 'Stashing changes')).start();
 
   try {
     const result = await git.stash(['save']);
@@ -1056,7 +1057,7 @@ async function stashSave(): Promise<void> {
 }
 
 async function stashPop(): Promise<void> {
-  const spinner = ora('Popping stash').start();
+  const spinner = ora(quipSpinnerText('stash_pop', 'Popping stash')).start();
 
   try {
     await git.stash(['pop']);
@@ -1069,7 +1070,7 @@ async function stashPop(): Promise<void> {
 }
 
 async function stashList(): Promise<void> {
-  const spinner = ora('Fetching stash list').start();
+  const spinner = ora(quipSpinnerText('stash_list', 'Fetching stash list')).start();
 
   try {
     const list = await git.stash(['list']);
@@ -1101,7 +1102,7 @@ async function stashDrop(index?: string): Promise<void> {
     return;
   }
   const stashRef = index ? `stash@{${index}}` : 'stash@{0}';
-  const spinner = ora(`Dropping ${chalk.cyan(stashRef)}`).start();
+  const spinner = ora(quipSpinnerText('stash_drop', `Dropping ${chalk.cyan(stashRef)}`)).start();
 
   try {
     await git.stash(['drop', stashRef]);
@@ -1121,7 +1122,7 @@ async function stashApply(index?: string): Promise<void> {
     return;
   }
   const stashRef = index ? `stash@{${index}}` : 'stash@{0}';
-  const spinner = ora(`Applying ${chalk.cyan(stashRef)}`).start();
+  const spinner = ora(quipSpinnerText('stash_apply', `Applying ${chalk.cyan(stashRef)}`)).start();
 
   try {
     await git.stash(['apply', stashRef]);
@@ -1171,7 +1172,7 @@ function compareVersions(current: string, latest: string): number {
 }
 
 async function performUpdate(version: string): Promise<void> {
-  const spinner = ora(`Updating omg to ${chalk.cyan(version)}`).start();
+  const spinner = ora(quipSpinnerText('update_run', `Updating omg to ${chalk.cyan(version)}`)).start();
 
   try {
     await execAsync('npm install -g @coder11125/omg');
@@ -1186,7 +1187,7 @@ async function performUpdate(version: string): Promise<void> {
 async function updateOmg(): Promise<void> {
   const currentVersion = PACKAGE_VERSION;
 
-  const spinner = ora('Checking for updates').start();
+  const spinner = ora(quipSpinnerText('update_check', 'Checking for updates')).start();
   const latestVersion = await getLatestVersion();
 
   if (!latestVersion) {
@@ -1212,14 +1213,14 @@ async function updateOmg(): Promise<void> {
 // init helpers
 // ---------------------------------------------------------------------------
 async function initRepo(directory: string, message?: string): Promise<void> {
-  const spinner = ora(`Initializing git repository in ${chalk.cyan(directory)}`).start();
+  const spinner = ora(quipSpinnerText('init', `Initializing git repository in ${chalk.cyan(directory)}`)).start();
 
   try {
     const targetGit = directory === '.' ? git : simpleGit(directory);
     await targetGit.init();
 
     if (message) {
-      spinner.text = 'Creating initial commit';
+      spinner.text = quipSpinnerText('init_commit', 'Creating initial commit');
       await targetGit.add('.');
       await targetGit.commit(message);
       spinner.succeed(chalk.green(`Initialized and committed: ${message}`));
@@ -1238,7 +1239,7 @@ async function initRepo(directory: string, message?: string): Promise<void> {
 // ---------------------------------------------------------------------------
 async function createTag(name: string, message?: string): Promise<void> {
   validateNotFlag(name, 'tag name');
-  const spinner = ora(`Creating tag ${chalk.cyan(name)}`).start();
+  const spinner = ora(quipSpinnerText('tag_create', `Creating tag ${chalk.cyan(name)}`)).start();
 
   try {
     if (message) {
@@ -1256,7 +1257,7 @@ async function createTag(name: string, message?: string): Promise<void> {
 }
 
 async function listTags(): Promise<void> {
-  const spinner = ora('Fetching tags').start();
+  const spinner = ora(quipSpinnerText('tag_list', 'Fetching tags')).start();
 
   try {
     const tags = await git.tags();
@@ -1285,7 +1286,7 @@ async function listTags(): Promise<void> {
 async function fetchChanges(remote?: string): Promise<void> {
   if (remote) validateNotFlag(remote, 'remote name');
   const spinnerText = remote ? `Fetching from ${chalk.cyan(remote)}` : 'Fetching from all remotes';
-  const spinner = ora(spinnerText).start();
+  const spinner = ora(quipSpinnerText('fetch', spinnerText)).start();
 
   try {
     if (remote) {
@@ -1311,7 +1312,7 @@ async function resetChanges(mode: 'soft' | 'mixed' | 'hard'): Promise<void> {
     hard: 'Discard all changes',
   };
   const spinnerText = `Resetting (${modeDescriptions[mode]})`;
-  const spinner = ora(spinnerText).start();
+  const spinner = ora(quipSpinnerText('reset', spinnerText)).start();
 
   try {
     const options: string[] = [`--${mode}`];
@@ -1340,7 +1341,7 @@ async function resetChanges(mode: 'soft' | 'mixed' | 'hard'): Promise<void> {
 // ---------------------------------------------------------------------------
 async function revertCommit(commit: string): Promise<void> {
   validateNotFlag(commit, 'commit hash');
-  const spinner = ora(`Reverting commit ${chalk.cyan(commit)}`).start();
+  const spinner = ora(quipSpinnerText('revert', `Reverting commit ${chalk.cyan(commit)}`)).start();
 
   try {
     await git.raw(['revert', '--no-edit', '--', commit]);
@@ -1353,7 +1354,7 @@ async function revertCommit(commit: string): Promise<void> {
 }
 
 async function continueRevert(): Promise<void> {
-  const spinner = ora('Continuing revert').start();
+  const spinner = ora(quipSpinnerText('revert_continue', 'Continuing revert')).start();
 
   try {
     await git.raw(['revert', '--continue']);
@@ -1370,7 +1371,7 @@ async function continueRevert(): Promise<void> {
 // ---------------------------------------------------------------------------
 async function cherryPickCommit(commit: string): Promise<void> {
   validateNotFlag(commit, 'commit hash');
-  const spinner = ora(`Cherry-picking ${chalk.cyan(commit)}`).start();
+  const spinner = ora(quipSpinnerText('cherry_pick', `Cherry-picking ${chalk.cyan(commit)}`)).start();
 
   try {
     await git.raw(['cherry-pick', '--', commit]);
@@ -1383,7 +1384,7 @@ async function cherryPickCommit(commit: string): Promise<void> {
 }
 
 async function continueCherryPick(): Promise<void> {
-  const spinner = ora('Continuing cherry-pick').start();
+  const spinner = ora(quipSpinnerText('cherry_pick_continue', 'Continuing cherry-pick')).start();
 
   try {
     await git.raw(['cherry-pick', '--continue']);
@@ -1487,7 +1488,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
   console.log(chalk.bold('\n🚢  Shipping changes...\n'));
 
   // Step 1: Check current status
-  const spinner = ora('Analyzing repository state').start();
+  const spinner = ora(quipSpinnerText('ship_analyze', 'Analyzing repository state')).start();
   let shipStatus: ShipStatus;
   try {
     shipStatus = await getShipStatus();
@@ -1507,7 +1508,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
   if (shipStatus.hasUncommitted || shipStatus.hasStaged) {
     if (message) {
       // Stage and commit
-      const stepSpinner = ora(`${dryRun ? 'Would' : 'Staging and committing'}`).start();
+      const stepSpinner = ora(quipSpinnerText('ship_commit', `${dryRun ? 'Would' : 'Staging and committing'}`)).start();
       if (!dryRun) {
         try {
           await git.add('.');
@@ -1525,7 +1526,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
     } else {
       // Just stage if there are unstaged changes
       if (shipStatus.hasUncommitted) {
-        const stepSpinner = ora(`${dryRun ? 'Would' : 'Staging'} uncommitted changes`).start();
+        const stepSpinner = ora(quipSpinnerText('ship_stage', `${dryRun ? 'Would' : 'Staging'} uncommitted changes`)).start();
         if (!dryRun) {
           try {
             await git.add('.');
@@ -1544,7 +1545,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
   }
 
   // Step 3: Fetch to check sync status
-  const fetchSpinner = ora(`${dryRun ? 'Would fetch' : 'Fetching'} from remote`).start();
+  const fetchSpinner = ora(quipSpinnerText('ship_fetch', `${dryRun ? 'Would fetch' : 'Fetching'} from remote`)).start();
   if (!dryRun) {
     try {
       await git.fetch();
@@ -1572,7 +1573,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
   // Step 5: Rebase if behind
   if (shipStatus.behind > 0) {
     if (useRebase) {
-      const rebaseSpinner = ora(`${dryRun ? 'Would rebase' : 'Rebasing'} onto remote`).start();
+      const rebaseSpinner = ora(quipSpinnerText('ship_rebase', `${dryRun ? 'Would rebase' : 'Rebasing'} onto remote`)).start();
       if (!dryRun) {
         try {
           await git.rebase([shipStatus.tracking ?? 'origin/' + shipStatus.branch]);
@@ -1587,7 +1588,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
         rebaseSpinner.succeed(`Would rebase ${shipStatus.behind} commit${shipStatus.behind > 1 ? 's' : ''}`);
       }
     } else {
-      const mergeSpinner = ora(`${dryRun ? 'Would merge' : 'Merging'} remote changes`).start();
+      const mergeSpinner = ora(quipSpinnerText('ship_merge', `${dryRun ? 'Would merge' : 'Merging'} remote changes`)).start();
       if (!dryRun) {
         try {
           await git.merge([shipStatus.tracking ?? 'origin/' + shipStatus.branch]);
@@ -1605,7 +1606,7 @@ async function shipChanges(message: string | undefined, useRebase: boolean, dryR
   }
 
   // Step 6: Push
-  const pushSpinner = ora(`${dryRun ? 'Would push' : 'Pushing'} to remote`).start();
+  const pushSpinner = ora(quipSpinnerText('ship_push', `${dryRun ? 'Would push' : 'Pushing'} to remote`)).start();
   if (!dryRun) {
     try {
       const pushOptions: string[] = [];
@@ -1664,7 +1665,7 @@ async function getInteractiveChoice(): Promise<string | null> {
 }
 
 async function oopsUncommit(keepChanges: boolean): Promise<void> {
-  const spinner = ora(`${keepChanges ? 'Undoing' : 'Discarding'} last commit`).start();
+  const spinner = ora(quipSpinnerText('oops_uncommit', `${keepChanges ? 'Undoing' : 'Discarding'} last commit`)).start();
   try {
     const resetMode = keepChanges ? 'soft' : 'hard';
     await git.reset([`--${resetMode}`, 'HEAD~1']);
@@ -1683,7 +1684,7 @@ async function oopsUncommit(keepChanges: boolean): Promise<void> {
 }
 
 async function oopsUnstage(): Promise<void> {
-  const spinner = ora('Unstaging all files').start();
+  const spinner = ora(quipSpinnerText('oops_unstage_all', 'Unstaging all files')).start();
   try {
     await git.reset(['--mixed']);
     spinner.succeed(chalk.green('All files unstaged'));
@@ -1696,7 +1697,7 @@ async function oopsUnstage(): Promise<void> {
 }
 
 async function oopsUnadd(file: string): Promise<void> {
-  const spinner = ora(`Unstaging ${chalk.cyan(file)}`).start();
+  const spinner = ora(quipSpinnerText('oops_unstage_file', `Unstaging ${chalk.cyan(file)}`)).start();
   try {
     await git.reset(['--', file]);
     spinner.succeed(chalk.green(`Unstaged ${file}`));
@@ -1708,7 +1709,7 @@ async function oopsUnadd(file: string): Promise<void> {
 }
 
 async function oopsRestoreBranch(): Promise<void> {
-  const spinner = ora('Checking reflog for deleted branches').start();
+  const spinner = ora(quipSpinnerText('oops_restore_branch', 'Checking reflog for deleted branches')).start();
   try {
     const reflog = await git.raw(['reflog']);
     // Parse reflog to find checkout lines that indicate branch switches
@@ -1806,7 +1807,7 @@ async function syncWorkspace(baseBranch: string): Promise<void> {
   };
 
   // Step 1: Get current branch and check status
-  const checkSpinner = ora('Checking repository state').start();
+  const checkSpinner = ora(quipSpinnerText('sync_check', 'Checking repository state')).start();
   try {
     const status = await git.status();
     state.originalBranch = status.current ?? 'HEAD';
@@ -1840,7 +1841,7 @@ async function syncWorkspace(baseBranch: string): Promise<void> {
                      currentStatus.not_added.length > 0 || currentStatus.staged.length > 0;
 
   if (hasChanges) {
-    const stashSpinner = ora('Stashing local changes').start();
+    const stashSpinner = ora(quipSpinnerText('sync_stash', 'Stashing local changes')).start();
     try {
       const stashResult = await git.stash(['save', state.stashMessage]);
       // Check if stash actually saved something (git returns "No local changes to save" if nothing to stash)
@@ -1866,7 +1867,7 @@ async function syncWorkspace(baseBranch: string): Promise<void> {
   }
 
   // Step 3: Checkout base branch
-  const checkoutSpinner = ora(`Switching to ${chalk.cyan(baseBranch)}`).start();
+  const checkoutSpinner = ora(quipSpinnerText('sync_checkout_base', `Switching to ${chalk.cyan(baseBranch)}`)).start();
   try {
     await git.checkout(baseBranch);
     checkoutSpinner.succeed(`Switched to ${baseBranch}`);
@@ -1895,7 +1896,7 @@ async function syncWorkspace(baseBranch: string): Promise<void> {
   }
 
   // Step 5: Go back to original branch
-  const returnSpinner = ora(`Returning to ${chalk.cyan(state.originalBranch)}`).start();
+  const returnSpinner = ora(quipSpinnerText('sync_return', `Returning to ${chalk.cyan(state.originalBranch)}`)).start();
   try {
     await git.checkout(state.originalBranch);
     returnSpinner.succeed(`Back on ${state.originalBranch}`);
@@ -1909,7 +1910,7 @@ async function syncWorkspace(baseBranch: string): Promise<void> {
 
   // Step 6: Pop stash
   if (state.hadStash) {
-    const popSpinner = ora('Restoring stashed changes').start();
+    const popSpinner = ora(quipSpinnerText('sync_pop', 'Restoring stashed changes')).start();
     try {
       await git.stash(['pop']);
       popSpinner.succeed('Changes restored');
@@ -1934,7 +1935,7 @@ async function syncWorkspace(baseBranch: string): Promise<void> {
 
 async function pullAndPrune(branch: string): Promise<boolean> {
   // Pull with rebase
-  const pullSpinner = ora(`Pulling latest ${branch}`).start();
+  const pullSpinner = ora(quipSpinnerText('sync_pull', `Pulling latest ${branch}`)).start();
   try {
     await git.pull(['--rebase']);
     pullSpinner.succeed(`${branch} is up to date`);
@@ -1951,7 +1952,7 @@ async function pullAndPrune(branch: string): Promise<boolean> {
   }
 
   // Prune stale remote branches
-  const pruneSpinner = ora('Pruning stale remote branches').start();
+  const pruneSpinner = ora(quipSpinnerText('sync_prune', 'Pruning stale remote branches')).start();
   try {
     await git.raw(['remote', 'prune', 'origin']);
     pruneSpinner.succeed('Pruned stale branches');
@@ -1977,7 +1978,7 @@ async function runDoctor(autoFix: boolean): Promise<void> {
   console.log(chalk.bold('\n🏥  Running health checks...\n'));
 
   const issues: HealthIssue[] = [];
-  const spinner = ora('Analyzing repository').start();
+  const spinner = ora(quipSpinnerText('doctor_analyze', 'Analyzing repository')).start();
 
   try {
     // Check 1: Uncommitted changes
@@ -2140,7 +2141,7 @@ async function runDoctor(autoFix: boolean): Promise<void> {
   for (const issue of errors) {
     console.log(`  ${chalk.red('✖')} ${issue.message}`);
     if (autoFix && issue.fixable && issue.autoFix) {
-      const fixSpinner = ora('  Attempting auto-fix...').start();
+      const fixSpinner = ora(quipSpinnerText('doctor_fix', '  Attempting auto-fix...')).start();
       try {
         const fixed = await issue.autoFix();
         if (fixed) {
@@ -2157,7 +2158,7 @@ async function runDoctor(autoFix: boolean): Promise<void> {
   for (const issue of warnings) {
     console.log(`  ${chalk.yellow('⚠')} ${issue.message}`);
     if (autoFix && issue.fixable && issue.autoFix) {
-      const fixSpinner = ora('  Attempting auto-fix...').start();
+      const fixSpinner = ora(quipSpinnerText('doctor_fix', '  Attempting auto-fix...')).start();
       try {
         const fixed = await issue.autoFix();
         if (fixed) {
@@ -2214,7 +2215,7 @@ async function getConfig(key: string): Promise<void> {
 
 async function setConfig(key: string, value: string): Promise<void> {
   validateConfigKey(key);
-  const spinner = ora(`Setting ${chalk.cyan(key)} = ${chalk.cyan(value)}`).start();
+  const spinner = ora(quipSpinnerText('config_set', `Setting ${chalk.cyan(key)} = ${chalk.cyan(value)}`)).start();
 
   try {
     await git.addConfig(key, value, false, 'local');
@@ -2230,7 +2231,7 @@ async function setConfig(key: string, value: string): Promise<void> {
 // social helpers
 // ---------------------------------------------------------------------------
 async function showSocialStats(): Promise<void> {
-  const spinner = ora('Analyzing contributor data').start();
+  const spinner = ora(quipSpinnerText('social', 'Analyzing contributor data')).start();
 
   try {
     // Fetch all commits
@@ -2327,7 +2328,7 @@ program
 // ---------------------------------------------------------------------------
 async function showBlame(file: string, lineNum?: number, showStats: boolean = false): Promise<void> {
   validateNotFlag(file, 'file path');
-  const spinner = ora(`Analyzing ${chalk.cyan(file)}`).start();
+  const spinner = ora(quipSpinnerText('blame', `Analyzing ${chalk.cyan(file)}`)).start();
 
   try {
     const blameData = await git.raw(['blame', file]);

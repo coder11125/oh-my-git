@@ -351,6 +351,17 @@ Shows:
 
 > 💡 Perfect for passive-aggressive code reviews or just satisfying your curiosity about who actually owns the codebase.
 
+### Spinner quips
+
+While `omg` waits on git, loading spinners pick a **random one-liner** from a category that matches what you are doing (push, stash, ship, doctor, and so on). The silly bit is followed by a dim **`·`** and the **real task** so you still know what is happening:
+
+```bash
+$ omg status
+⠋ Taking emotional inventory · Analyzing repository status
+```
+
+Quips live in [`src/quips.ts`](src/quips.ts) if you want to add your own trauma.
+
 ### Verbose Mode (For the Curious)
 
 By default, `omg` speaks human. When git throws a tantrum, we translate:
