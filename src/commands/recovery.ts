@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { git } from '../git.js';
 import { handleNerdError } from '../errors.js';
+import { sanitizeForTerminal } from '../output.js';
 import { quipSpinnerText } from '../quips.js';
 
 async function showOopsMenu(): Promise<void> {
@@ -60,12 +61,13 @@ async function oopsUnstage(): Promise<void> {
 }
 
 async function oopsUnadd(file: string): Promise<void> {
-  const spinner = ora(quipSpinnerText('oops_unstage_file', `Unstaging ${chalk.cyan(file)}`)).start();
+  const safeFile = sanitizeForTerminal(file);
+  const spinner = ora(quipSpinnerText('oops_unstage_file', `Unstaging ${chalk.cyan(safeFile)}`)).start();
   try {
     await git.reset(['--', file]);
-    spinner.succeed(chalk.green(`Unstaged ${file}`));
+    spinner.succeed(chalk.green(`Unstaged ${safeFile}`));
   } catch (err) {
-    spinner.fail(chalk.red(`Failed to unstage '${file}'`));
+    spinner.fail(chalk.red(`Failed to unstage '${safeFile}'`));
     handleNerdError(err);
     process.exitCode = 1;
   }
@@ -103,7 +105,7 @@ async function oopsRestoreBranch(): Promise<void> {
 
     console.log(chalk.bold('\nRecently deleted branches:\n'));
     deletedBranches.slice(0, 10).forEach((b, i) => {
-      console.log(`  ${chalk.cyan(`${i + 1}.`)} ${chalk.white(b.branch.padEnd(20))} ${chalk.dim(b.sha.slice(0, 7))}`);
+      console.log(`  ${chalk.cyan(`${i + 1}.`)} ${chalk.white(sanitizeForTerminal(b.branch).padEnd(20))} ${chalk.dim(b.sha.slice(0, 7))}`);
     });
     console.log(chalk.dim('\nTo restore: git checkout -b <branch-name> <sha>'));
   } catch (err) {

@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { git } from '../git.js';
 import { handleNerdError } from '../errors.js';
+import { sanitizeForTerminal } from '../output.js';
 import { quipSpinnerText } from '../quips.js';
 
 /** Parse `git shortlog -sn` lines: leading spaces, count, tab, author name. */
@@ -71,7 +72,7 @@ export async function showSocialStats(): Promise<void> {
         icon = '📝';
       }
 
-      const authorPadded = stat.author.padEnd(20);
+      const authorPadded = sanitizeForTerminal(stat.author).padEnd(20);
       console.log(
         `  ${icon} ${chalk.white(authorPadded)} ` +
         `${chalk.yellow(stat.count.toString().padStart(4))} commits ` +
@@ -85,7 +86,7 @@ export async function showSocialStats(): Promise<void> {
     if (contributors.length === 1) {
       console.log(chalk.dim('💬 Solo project - you\'re doing great (or going crazy)\n'));
     } else if (contributors.length > 1 && contributors[0].count > totalCommits * 0.7) {
-      console.log(chalk.dim(`💬 This is a well-balanced team. Or ${contributors[0].author} is doing all the work.\n`));
+      console.log(chalk.dim(`💬 This is a well-balanced team. Or ${sanitizeForTerminal(contributors[0].author)} is doing all the work.\n`));
     } else if (contributors.length > 10) {
       console.log(chalk.dim('💬 That\'s a lot of cooks in the kitchen. Hope the soup is good!\n'));
     } else {

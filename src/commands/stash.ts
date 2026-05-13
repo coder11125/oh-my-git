@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { git } from '../git.js';
 import { handleNerdError } from '../errors.js';
+import { sanitizeForTerminal } from '../output.js';
 import { quipSpinnerText } from '../quips.js';
 
 export async function handleStash(action?: string, index?: string): Promise<void> {
@@ -74,7 +75,7 @@ async function stashList(): Promise<void> {
     console.log(chalk.bold('\nStashes:\n'));
     const lines = list.split('\n').filter(line => line.trim() !== '');
     for (const line of lines) {
-      console.log(`  ${chalk.cyan(line)}`);
+      console.log(`  ${chalk.cyan(sanitizeForTerminal(line))}`);
     }
     console.log('');
   } catch (err) {

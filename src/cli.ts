@@ -124,7 +124,7 @@ export function createProgram(): Command {
     .option('-u, --set-upstream <branch>', 'set upstream and push')
     .action(async (remote?: string, options?: { force?: boolean; setUpstream?: string }) => {
       const { pushCommits } = await import('./commands/worktree.js');
-      await pushCommits(remote ?? 'origin', options?.force ?? false, options?.setUpstream);
+      await pushCommits(remote, options?.force ?? false, options?.setUpstream);
     });
 
   // ---------------------------------------------------------------------------

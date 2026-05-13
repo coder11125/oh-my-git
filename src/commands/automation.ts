@@ -5,6 +5,8 @@ import ora from 'ora';
 import { git } from '../git.js';
 import { PACKAGE_VERSION } from '../version.js';
 import { handleNerdError, formatError } from '../errors.js';
+import { getUpstreamInfo } from '../git-context.js';
+import { sanitizeForTerminal } from '../output.js';
 import { quipSpinnerText } from '../quips.js';
 
 const execAsync = promisify(exec);
@@ -86,15 +88,18 @@ interface ShipStatus {
   ahead: number;
   behind: number;
   tracking: string | null;
+  remoteName: string | null;
+  remoteBranch: string | null;
   remoteUrl: string | null;
 }
 
 async function getShipStatus(): Promise<ShipStatus> {
-  const [status, remotes] = await Promise.all([
-    git.status(),
-    git.getRemotes(true),
-  ]);
-  const remoteUrl = remotes.length > 0 ? (remotes[0].refs.fetch || remotes[0].refs.push) : null;
+  const [status, remotes] = await Promise.all([git.status(), git.getRemotes(true)]);
+  const upstream = getUpstreamInfo(status);
+  const selectedRemote = upstream.remoteName
+    ? remotes.find(remote => remote.name === upstream.remoteName) ?? remotes[0]
+    : remotes[0];
+  const remoteUrl = selectedRemote ? (selectedRemote.refs.fetch || selectedRemote.refs.push) : null;
 
   return {
     hasUncommitted: status.modified.length > 0 || status.deleted.length > 0 || status.not_added.length > 0,
@@ -103,6 +108,8 @@ async function getShipStatus(): Promise<ShipStatus> {
     ahead: status.ahead,
     behind: status.behind,
     tracking: status.tracking,
+    remoteName: upstream.remoteName,
+    remoteBranch: upstream.remoteBranch,
     remoteUrl,
   };
 }
@@ -115,7 +122,7 @@ export async function shipChanges(message: string | undefined, useRebase: boolea
   let shipStatus: ShipStatus;
   try {
     shipStatus = await getShipStatus();
-    spinner.succeed(`On branch ${chalk.cyan(shipStatus.branch)}`);
+    spinner.succeed(`On branch ${chalk.cyan(sanitizeForTerminal(shipStatus.branch))}`);
   } catch (err) {
     spinner.fail(chalk.red('Failed to analyze repository'));
     handleNerdError(err);
@@ -136,7 +143,7 @@ export async function shipChanges(message: string | undefined, useRebase: boolea
         try {
           await git.add('.');
           const result = await git.commit(message, undefined, { '--': null });
-          stepSpinner.succeed(`Committed: ${chalk.cyan(message)}${result.commit ? ` (${result.commit.slice(0, 7)})` : ''}`);
+          stepSpinner.succeed(`Committed: ${chalk.cyan(sanitizeForTerminal(message))}${result.commit ? ` (${result.commit.slice(0, 7)})` : ''}`);
         } catch (err) {
           stepSpinner.fail(chalk.red('Commit failed'));
           handleNerdError(err);
@@ -144,7 +151,7 @@ export async function shipChanges(message: string | undefined, useRebase: boolea
           return;
         }
       } else {
-        stepSpinner.succeed(`Would commit: ${chalk.cyan(message)}`);
+        stepSpinner.succeed(`Would commit: ${chalk.cyan(sanitizeForTerminal(message))}`);
       }
     } else {
       // Just stage if there are unstaged changes
@@ -233,11 +240,13 @@ export async function shipChanges(message: string | undefined, useRebase: boolea
   if (!dryRun) {
     try {
       const pushOptions: string[] = [];
+      const remoteName = shipStatus.remoteName ?? 'origin';
+      const remoteBranch = shipStatus.remoteBranch ?? shipStatus.branch;
       if (!shipStatus.tracking) {
         pushOptions.push('-u');
       }
-      await git.push('origin', shipStatus.branch, pushOptions);
-      pushSpinner.succeed(chalk.green(`Shipped to ${chalk.cyan('origin/' + shipStatus.branch)}`));
+      await git.push(remoteName, shipStatus.branch, pushOptions);
+      pushSpinner.succeed(chalk.green(`Shipped to ${chalk.cyan(sanitizeForTerminal(`${remoteName}/${remoteBranch}`))}`));
     } catch (err) {
       pushSpinner.fail(chalk.red('Push failed'));
       handleNerdError(err);

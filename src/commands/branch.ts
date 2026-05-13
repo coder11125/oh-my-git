@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { git } from '../git.js';
 import { handleNerdError, formatError } from '../errors.js';
+import { sanitizeForTerminal } from '../output.js';
 import { validateNotFlag } from '../validation.js';
 import { quipSpinnerText } from '../quips.js';
 
@@ -20,9 +21,9 @@ export async function listBranches(): Promise<void> {
     for (const name of summary.all) {
       const isCurrent = name === summary.current;
       if (isCurrent) {
-        console.log(`  ${chalk.green('*')} ${chalk.green.bold(name)}  ${chalk.dim('← current')}`);
+        console.log(`  ${chalk.green('*')} ${chalk.green.bold(sanitizeForTerminal(name))}  ${chalk.dim('← current')}`);
       } else {
-        console.log(`    ${chalk.white(name)}`);
+        console.log(`    ${chalk.white(sanitizeForTerminal(name))}`);
       }
     }
     console.log('');
@@ -36,12 +37,13 @@ export async function listBranches(): Promise<void> {
 /** Create a branch, optionally switching to it immediately. */
 export async function createBranch(name: string, switchAfter: boolean): Promise<void> {
   validateNotFlag(name, 'branch name');
-  const spinner = ora(quipSpinnerText('branch_create', `Creating branch ${chalk.cyan(name)}`)).start();
+  const safeName = sanitizeForTerminal(name);
+  const spinner = ora(quipSpinnerText('branch_create', `Creating branch ${chalk.cyan(safeName)}`)).start();
   try {
     // Refuse to create if the name already exists
     const existing = await git.branchLocal();
     if (existing.all.includes(name)) {
-      spinner.fail(chalk.red(`Branch '${name}' already exists`));
+      spinner.fail(chalk.red(`Branch '${safeName}' already exists`));
       process.exitCode = 1;
       return;
     }
@@ -49,19 +51,19 @@ export async function createBranch(name: string, switchAfter: boolean): Promise<
     await git.checkoutLocalBranch(name);          // creates + checks out
 
     if (switchAfter) {
-      spinner.succeed(chalk.green(`Created and switched to branch '${name}'`));
+      spinner.succeed(chalk.green(`Created and switched to branch '${safeName}'`));
     } else {
       // Branch was created via checkoutLocalBranch (which also switches).
       // If the caller did NOT want to switch, go back to the previous branch.
       const prev = existing.current;
       await git.checkout(prev);
       spinner.succeed(
-        chalk.green(`Created branch '${name}'`) +
-        chalk.dim(` (still on '${prev}')`),
+        chalk.green(`Created branch '${safeName}'`) +
+        chalk.dim(` (still on '${sanitizeForTerminal(prev)}')`),
       );
     }
   } catch (err) {
-    spinner.fail(chalk.red(`Failed to create branch '${name}'`));
+    spinner.fail(chalk.red(`Failed to create branch '${safeName}'`));
     handleNerdError(err);
     process.exitCode = 1;
   }
@@ -70,29 +72,30 @@ export async function createBranch(name: string, switchAfter: boolean): Promise<
 /** Delete a branch with a safety guard (must be fully merged). */
 export async function deleteBranch(name: string): Promise<void> {
   validateNotFlag(name, 'branch name');
-  const spinner = ora(quipSpinnerText('branch_delete', `Deleting branch ${chalk.cyan(name)}`)).start();
+  const safeName = sanitizeForTerminal(name);
+  const spinner = ora(quipSpinnerText('branch_delete', `Deleting branch ${chalk.cyan(safeName)}`)).start();
   try {
     const summary = await git.branchLocal();
 
     // Prevent deleting the currently active branch
     if (name === summary.current) {
-      spinner.fail(chalk.red(`Cannot delete '${name}': it is the current branch`));
+      spinner.fail(chalk.red(`Cannot delete '${safeName}': it is the current branch`));
       process.exitCode = 1;
       return;
     }
 
     // -d is safe delete (only merged branches); throws if unmerged
     await git.deleteLocalBranch(name, false);
-    spinner.succeed(chalk.green(`Deleted branch '${name}'`));
+    spinner.succeed(chalk.green(`Deleted branch '${safeName}'`));
   } catch (err) {
     const msg = formatError(err);
     if (msg.includes('not fully merged')) {
       spinner.fail(
-        chalk.red(`Branch '${name}' is not fully merged.`) +
+        chalk.red(`Branch '${safeName}' is not fully merged.`) +
         chalk.yellow('\n  Use `git branch -D` to force-delete.'),
       );
     } else {
-      spinner.fail(chalk.red(`Failed to delete '${name}'`));
+      spinner.fail(chalk.red(`Failed to delete '${safeName}'`));
       handleNerdError(err, name);
     }
     process.exitCode = 1;

@@ -83,8 +83,9 @@ omg remote <url> <name>        # add a new remote with a custom name
 Share your code with the world (or your team, or just your future self wondering what you were thinking).
 
 ```bash
-omg push                       # push to upstream
+omg push                       # push current branch to its upstream remote/branch
 omg push <remote>              # push to specific remote
+omg push origin -u main        # set upstream branch while pushing
 omg push -f                    # force push with lease (safer)
 ```
 
@@ -96,7 +97,7 @@ Download changes from remote. The `-r` flag uses rebase, which keeps history lin
 
 ```bash
 omg pull                       # pull from upstream
-omg pull <remote>              # pull from specific remote
+omg pull <remote>              # pull current branch from specific remote
 omg pull -r                    # pull with rebase (cleaner history)
 ```
 

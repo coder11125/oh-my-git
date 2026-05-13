@@ -2,27 +2,31 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { git, simpleGit } from '../git.js';
 import { handleNerdError, formatError } from '../errors.js';
+import { getUpstreamInfo } from '../git-context.js';
+import { sanitizeForTerminal } from '../output.js';
 import { validateConfigKey, validateNotFlag } from '../validation.js';
 import { quipSpinnerText } from '../quips.js';
 
 export async function checkoutBranch(branch: string): Promise<void> {
   validateNotFlag(branch, 'branch name');
-  const spinner = ora(quipSpinnerText('checkout', `Checking out ${chalk.cyan(branch)}`)).start();
+  const safeBranch = sanitizeForTerminal(branch);
+  const spinner = ora(quipSpinnerText('checkout', `Checking out ${chalk.cyan(safeBranch)}`)).start();
   try {
     await git.checkout(branch);
-    spinner.succeed(chalk.green(`Switched to branch '${branch}'`));
+    spinner.succeed(chalk.green(`Switched to branch '${safeBranch}'`));
   } catch (err) {
-    spinner.fail(chalk.red(`Failed to checkout '${branch}'`));
+    spinner.fail(chalk.red(`Failed to checkout '${safeBranch}'`));
     handleNerdError(err);
     process.exitCode = 1;
   }
 }
 
 export async function stageAndCommit(message: string): Promise<void> {
+  const safeMessage = sanitizeForTerminal(message);
   const spinner = ora(quipSpinnerText('commit_stage', 'Staging all changes')).start();
   try {
     await git.add('.');
-    spinner.text = quipSpinnerText('commit_write', `Committing with message: ${chalk.cyan(message)}`);
+    spinner.text = quipSpinnerText('commit_write', `Committing with message: ${chalk.cyan(safeMessage)}`);
     const result = await git.commit(message, undefined, { '--': null });
     const sha = result.commit ? ` (${result.commit})` : '';
     spinner.succeed(chalk.green(`Committed${sha}`));
@@ -50,7 +54,7 @@ export async function showStatus(): Promise<void> {
       if (status.behind > 0) parts.push(chalk.red(`↓ ${status.behind} behind`));
       syncInfo = ` (${parts.join(', ')})`;
     }
-    console.log(`${chalk.bold('Branch:')} ${chalk.cyan(branch)}${syncInfo}\n`);
+    console.log(`${chalk.bold('Branch:')} ${chalk.cyan(sanitizeForTerminal(branch))}${syncInfo}\n`);
 
     // 2. Changes Breakdown
     const staged = status.staged;
@@ -60,20 +64,20 @@ export async function showStatus(): Promise<void> {
 
     if (staged.length > 0) {
       console.log(chalk.green.bold('Staged changes:'));
-      staged.forEach(f => console.log(`  ${chalk.green('+')} ${f}`));
+      staged.forEach(f => console.log(`  ${chalk.green('+')} ${sanitizeForTerminal(f)}`));
       console.log('');
     }
 
     if (modified.length > 0 || deleted.length > 0) {
       console.log(chalk.yellow.bold('Unstaged changes:'));
-      modified.forEach(f => console.log(`  ${chalk.yellow('M')} ${f}`));
-      deleted.forEach(f => console.log(`  ${chalk.red('D')} ${f}`));
+      modified.forEach(f => console.log(`  ${chalk.yellow('M')} ${sanitizeForTerminal(f)}`));
+      deleted.forEach(f => console.log(`  ${chalk.red('D')} ${sanitizeForTerminal(f)}`));
       console.log('');
     }
 
     if (untracked.length > 0) {
       console.log(chalk.dim.bold('Untracked files:'));
-      untracked.forEach(f => console.log(`  ${chalk.dim('?')} ${f}`));
+      untracked.forEach(f => console.log(`  ${chalk.dim('?')} ${sanitizeForTerminal(f)}`));
       console.log('');
     }
 
@@ -91,28 +95,45 @@ export async function showStatus(): Promise<void> {
 // ---------------------------------------------------------------------------
 // push helpers
 // ---------------------------------------------------------------------------
-export async function pushCommits(remote: string, force: boolean = false, setUpstream?: string): Promise<void> {
-  validateNotFlag(remote, 'remote name');
+export async function pushCommits(remote?: string, force: boolean = false, setUpstream?: string): Promise<void> {
+  if (remote) validateNotFlag(remote, 'remote name');
   if (setUpstream) validateNotFlag(setUpstream, 'upstream branch');
-  const target = setUpstream ?? remote;
-  const spinnerText = target ? `Pushing to ${chalk.cyan(target)}` : 'Pushing to upstream';
-  const spinner = ora(quipSpinnerText('push', spinnerText)).start();
+  let spinner: ReturnType<typeof ora> | undefined;
 
   try {
+    const status = await git.status();
+    const upstream = getUpstreamInfo(status);
+    const remoteName = remote || upstream.remoteName || 'origin';
+    const branchName = status.current;
+
+    if (!branchName) {
+      console.error(chalk.red('Cannot push from detached HEAD'));
+      process.exitCode = 1;
+      return;
+    }
+
+    const targetBranch = setUpstream ?? upstream.remoteBranch ?? branchName;
+    const spinnerText = setUpstream
+      ? `Pushing to ${chalk.cyan(sanitizeForTerminal(`${remoteName}/${targetBranch}`))}`
+      : upstream.trackingBranch
+        ? `Pushing to ${chalk.cyan(sanitizeForTerminal(upstream.trackingBranch))}`
+        : `Pushing to ${chalk.cyan(sanitizeForTerminal(`${remoteName}/${targetBranch}`))}`;
+    spinner = ora(quipSpinnerText('push', spinnerText)).start();
     const options: string[] = [];
     if (force) options.push('--force-with-lease');
 
     if (setUpstream) {
       options.push('-u');
-      await git.push(remote, 'HEAD', options);
-      spinner.succeed(chalk.green(`Pushed and set upstream to '${remote}/${setUpstream}'`));
+      await git.push(remoteName, `${branchName}:${targetBranch}`, options);
+      spinner.succeed(chalk.green(`Pushed and set upstream to '${sanitizeForTerminal(`${remoteName}/${targetBranch}`)}'`));
     } else {
-      await git.push(remote, 'HEAD', options);
-      spinner.succeed(chalk.green(`Pushed to ${remote}`));
+      await git.push(remoteName, branchName, options);
+      const destination = upstream.trackingBranch ?? `${remoteName}/${targetBranch}`;
+      spinner.succeed(chalk.green(`Pushed to ${sanitizeForTerminal(destination)}`));
     }
   } catch (err) {
-    spinner.fail(chalk.red('Push failed'));
     const msg = formatError(err);
+    spinner?.fail(chalk.red('Push failed'));
     if (msg.includes('no upstream branch')) {
       console.error(chalk.red('No upstream configured. Use -u flag to set upstream.'));
       handleNerdError(err);
@@ -128,22 +149,34 @@ export async function pushCommits(remote: string, force: boolean = false, setUps
 // ---------------------------------------------------------------------------
 export async function pullChanges(remote?: string, rebase: boolean = false): Promise<void> {
   if (remote) validateNotFlag(remote, 'remote name');
-  const spinnerText = remote ? `Pulling from ${chalk.cyan(remote)}` : 'Pulling from upstream';
-  const spinner = ora(quipSpinnerText('pull', spinnerText)).start();
+  let spinner: ReturnType<typeof ora> | undefined;
 
   try {
+    const status = await git.status();
+    const upstream = getUpstreamInfo(status);
     const options: string[] = [];
     if (rebase) options.push('--rebase');
+    const spinnerText = remote
+      ? `Pulling from ${chalk.cyan(sanitizeForTerminal(remote))}`
+      : upstream.trackingBranch
+        ? `Pulling from ${chalk.cyan(sanitizeForTerminal(upstream.trackingBranch))}`
+        : 'Pulling from upstream';
+    spinner = ora(quipSpinnerText('pull', spinnerText)).start();
 
     if (remote) {
-      await git.pull(remote, 'HEAD', options);
-      spinner.succeed(chalk.green(`Pulled from ${remote}${rebase ? ' (rebase)' : ''}`));
+      if (!status.current) {
+        spinner.fail(chalk.red('Cannot pull into detached HEAD'));
+        process.exitCode = 1;
+        return;
+      }
+      await git.pull(remote, status.current, options);
+      spinner.succeed(chalk.green(`Pulled ${sanitizeForTerminal(remote)}/${sanitizeForTerminal(status.current)}${rebase ? ' (rebase)' : ''}`));
     } else {
       await git.pull(options);
       spinner.succeed(chalk.green(`Pulled from upstream${rebase ? ' (rebase)' : ''}`));
     }
   } catch (err) {
-    spinner.fail(chalk.red('Pull failed'));
+    spinner?.fail(chalk.red('Pull failed'));
     handleNerdError(err);
     process.exitCode = 1;
   }
@@ -173,7 +206,7 @@ export async function showLog(count: number, oneline: boolean): Promise<void> {
     // log.all contains all commits including latest
     if (log.all && log.all.length > 0) {
       for (const commit of log.all) {
-        console.log(`  ${chalk.yellow(commit.hash.slice(0, 7))} ${commit.message}`);
+        console.log(`  ${chalk.yellow(commit.hash.slice(0, 7))} ${sanitizeForTerminal(commit.message)}`);
       }
     }
 
@@ -205,7 +238,7 @@ export async function showDiff(file: string | undefined, staged: boolean): Promi
       if (staged) {
         console.log(chalk.yellow('No staged changes to show.'));
       } else if (file) {
-        console.log(chalk.yellow(`No changes in ${file}.`));
+        console.log(chalk.yellow(`No changes in ${sanitizeForTerminal(file)}.`));
       } else {
         console.log(chalk.yellow('No unstaged changes to show.'));
       }
@@ -218,15 +251,15 @@ export async function showDiff(file: string | undefined, staged: boolean): Promi
     const lines = diff.split('\n');
     for (const line of lines) {
       if (line.startsWith('+')) {
-        console.log(chalk.green(line));
+        console.log(chalk.green(sanitizeForTerminal(line)));
       } else if (line.startsWith('-')) {
-        console.log(chalk.red(line));
+        console.log(chalk.red(sanitizeForTerminal(line)));
       } else if (line.startsWith('@@')) {
-        console.log(chalk.cyan(line));
+        console.log(chalk.cyan(sanitizeForTerminal(line)));
       } else if (line.startsWith('diff') || line.startsWith('index') || line.startsWith('---') || line.startsWith('+++')) {
-        console.log(chalk.dim(line));
+        console.log(chalk.dim(sanitizeForTerminal(line)));
       } else {
-        console.log(line);
+        console.log(sanitizeForTerminal(line));
       }
     }
     console.log('');
@@ -252,12 +285,13 @@ function sanitizeDirName(name: string): string {
 export async function cloneRepo(url: string, directory?: string): Promise<void> {
   const rawDir = directory || url.split('/').pop()?.replace('.git', '') || 'repo';
   const targetDir = sanitizeDirName(rawDir);
-  const spinner = ora(quipSpinnerText('clone', `Cloning into ${chalk.cyan(targetDir)}`)).start();
+  const safeTargetDir = sanitizeForTerminal(targetDir);
+  const spinner = ora(quipSpinnerText('clone', `Cloning into ${chalk.cyan(safeTargetDir)}`)).start();
 
   try {
     await git.clone(url, targetDir);
-    spinner.succeed(chalk.green(`Cloned into '${targetDir}'`));
-    console.log(chalk.dim(`  cd ${targetDir} && omg status`));
+    spinner.succeed(chalk.green(`Cloned into '${safeTargetDir}'`));
+    console.log(chalk.dim(`  cd ${safeTargetDir} && omg status`));
   } catch (err) {
     spinner.fail(chalk.red('Clone failed'));
     handleNerdError(err);
@@ -268,7 +302,8 @@ export async function cloneRepo(url: string, directory?: string): Promise<void> 
 // ---------------------------------------------------------------------------
 
 export async function initRepo(directory: string, message?: string): Promise<void> {
-  const spinner = ora(quipSpinnerText('init', `Initializing git repository in ${chalk.cyan(directory)}`)).start();
+  const safeDirectory = sanitizeForTerminal(directory);
+  const spinner = ora(quipSpinnerText('init', `Initializing git repository in ${chalk.cyan(safeDirectory)}`)).start();
 
   try {
     const targetGit = directory === '.' ? git : simpleGit(directory);
@@ -278,9 +313,9 @@ export async function initRepo(directory: string, message?: string): Promise<voi
       spinner.text = quipSpinnerText('init_commit', 'Creating initial commit');
       await targetGit.add('.');
       await targetGit.commit(message);
-      spinner.succeed(chalk.green(`Initialized and committed: ${message}`));
+      spinner.succeed(chalk.green(`Initialized and committed: ${sanitizeForTerminal(message)}`));
     } else {
-      spinner.succeed(chalk.green(`Initialized empty git repository in ${directory}`));
+      spinner.succeed(chalk.green(`Initialized empty git repository in ${safeDirectory}`));
     }
   } catch (err) {
     spinner.fail(chalk.red('Failed to initialize repository'));
@@ -347,9 +382,9 @@ export async function getConfig(key: string): Promise<void> {
   try {
     const value = await git.getConfig(key);
     if (value.value) {
-      console.log(`${chalk.green(key)} = ${chalk.cyan(value.value)}`);
+      console.log(`${chalk.green(sanitizeForTerminal(key))} = ${chalk.cyan(sanitizeForTerminal(value.value))}`);
     } else {
-      console.log(chalk.yellow(`No value set for '${key}'`));
+      console.log(chalk.yellow(`No value set for '${sanitizeForTerminal(key)}'`));
     }
   } catch (err) {
     console.error(chalk.red(`Failed to get config '${key}'`));
@@ -360,13 +395,15 @@ export async function getConfig(key: string): Promise<void> {
 
 export async function setConfig(key: string, value: string): Promise<void> {
   validateConfigKey(key);
-  const spinner = ora(quipSpinnerText('config_set', `Setting ${chalk.cyan(key)} = ${chalk.cyan(value)}`)).start();
+  const safeKey = sanitizeForTerminal(key);
+  const safeValue = sanitizeForTerminal(value);
+  const spinner = ora(quipSpinnerText('config_set', `Setting ${chalk.cyan(safeKey)} = ${chalk.cyan(safeValue)}`)).start();
 
   try {
     await git.addConfig(key, value, false, 'local');
-    spinner.succeed(chalk.green(`Set '${key}' to '${value}'`));
+    spinner.succeed(chalk.green(`Set '${safeKey}' to '${safeValue}'`));
   } catch (err) {
-    spinner.fail(chalk.red(`Failed to set config '${key}'`));
+    spinner.fail(chalk.red(`Failed to set config '${safeKey}'`));
     handleNerdError(err);
     process.exitCode = 1;
   }
