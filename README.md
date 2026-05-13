@@ -417,4 +417,12 @@ omg --help
 
 Remember: `omg` won't make you a better developer. But it might make you a happier one. And isn't that what really matters?
 
-**Pro tip:** If you ever feel overwhelmed by git, just remember: Linus Torvalds created git in 2005 because existing tools weren't painful enough. You're not the problem. Git is the problem. `omg` is [...]
+**Pro tip:** If you ever feel overwhelmed by git, just remember: Linus Torvalds created git in 2005 because existing tools weren't painful enough. You're not the problem. Git is the problem.
+
+## 🤝 Contributors
+
+Thank you to all the amazing people who have helped build oh-my-git! 
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
