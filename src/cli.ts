@@ -2,41 +2,6 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { PACKAGE_VERSION } from './version.js';
 import { setVerbose } from './errors.js';
-import { createBranch, deleteBranch, listBranches } from './commands/branch.js';
-import { addRemote, listRemotes } from './commands/remote.js';
-import {
-  checkoutBranch,
-  cloneRepo,
-  fetchChanges,
-  getConfig,
-  initRepo,
-  pullChanges,
-  pushCommits,
-  resetChanges,
-  setConfig,
-  showDiff,
-  showLog,
-  showStatus,
-  stageAndCommit,
-} from './commands/worktree.js';
-import {
-  abortMerge,
-  abortRebase,
-  cherryPickCommit,
-  continueCherryPick,
-  continueRebase,
-  continueRevert,
-  createTag,
-  listTags,
-  mergeBranch,
-  rebaseBranch,
-  revertCommit,
-  showBlame,
-} from './commands/history.js';
-import { handleStash } from './commands/stash.js';
-import { runDoctor, shipChanges, syncWorkspace, updateOmg } from './commands/automation.js';
-import { handleOops } from './commands/recovery.js';
-import { showSocialStats } from './commands/social.js';
 
 interface CliOptions {
   visit?: string;
@@ -60,6 +25,7 @@ export function createProgram(): Command {
     .option('--visit <branch>', 'checkout the specified branch')
     .option('-c, --commit <message>', 'stage all changes and commit with a message')
     .action(async (opts: CliOptions & { verbose?: boolean }) => {
+      const { checkoutBranch, stageAndCommit } = await import('./commands/worktree.js');
       // Set verbose mode globally
       setVerbose(opts.verbose ?? false);
       let didSomething = false;
@@ -103,6 +69,7 @@ export function createProgram(): Command {
     .option('-s, --switch', 'switch to the newly created branch (use with -n)')
     .option('-d, --delete <name>', 'delete a branch')
     .action(async (opts: BranchOptions & { switch?: boolean }) => {
+      const { createBranch, deleteBranch, listBranches } = await import('./commands/branch.js');
       if (opts.new) {
         await createBranch(opts.new, opts.switch ?? false);
       } else if (opts.delete) {
@@ -123,6 +90,7 @@ export function createProgram(): Command {
       '  <url> [name]     add a new remote (name defaults to "origin")',
     )
     .action(async (url?: string, name?: string) => {
+      const { addRemote, listRemotes } = await import('./commands/remote.js');
       if (url) {
         await addRemote(url, name ?? 'origin');
       } else {
@@ -137,6 +105,7 @@ export function createProgram(): Command {
     .command('status')
     .description('show a friendly summary of the current repository state')
     .action(async () => {
+      const { showStatus } = await import('./commands/worktree.js');
       await showStatus();
     });
 
@@ -154,6 +123,7 @@ export function createProgram(): Command {
     .option('-f, --force', 'force push with lease')
     .option('-u, --set-upstream <branch>', 'set upstream and push')
     .action(async (remote?: string, options?: { force?: boolean; setUpstream?: string }) => {
+      const { pushCommits } = await import('./commands/worktree.js');
       await pushCommits(remote ?? 'origin', options?.force ?? false, options?.setUpstream);
     });
 
@@ -170,6 +140,7 @@ export function createProgram(): Command {
     )
     .option('-r, --rebase', 'rebase instead of merge')
     .action(async (remote?: string, options?: { rebase?: boolean }) => {
+      const { pullChanges } = await import('./commands/worktree.js');
       await pullChanges(remote, options?.rebase ?? false);
     });
 
@@ -187,6 +158,7 @@ export function createProgram(): Command {
     .option('--squash', 'squash merge')
     .option('--abort', 'abort ongoing merge')
     .action(async (branch?: string, options?: { squash?: boolean; abort?: boolean }) => {
+      const { abortMerge, mergeBranch } = await import('./commands/history.js');
       if (options?.abort) {
         await abortMerge();
       } else if (branch) {
@@ -211,6 +183,7 @@ export function createProgram(): Command {
     .option('--continue', 'continue after resolving conflicts')
     .option('--abort', 'abort rebase')
     .action(async (branch?: string, options?: { continue?: boolean; abort?: boolean }) => {
+      const { abortRebase, continueRebase, rebaseBranch } = await import('./commands/history.js');
       if (options?.continue) {
         await continueRebase();
       } else if (options?.abort) {
@@ -237,6 +210,7 @@ export function createProgram(): Command {
     .option('-n, --number <count>', 'limit number of commits', '10')
     .option('--oneline', 'show condensed one-line format')
     .action(async (options: { number: string; oneline?: boolean }) => {
+      const { showLog } = await import('./commands/worktree.js');
       await showLog(parseInt(options.number, 10), options.oneline ?? false);
     });
 
@@ -253,6 +227,7 @@ export function createProgram(): Command {
     )
     .option('--staged', 'show staged changes')
     .action(async (file?: string, options?: { staged?: boolean }) => {
+      const { showDiff } = await import('./commands/worktree.js');
       await showDiff(file, options?.staged ?? false);
     });
 
@@ -267,6 +242,7 @@ export function createProgram(): Command {
       '  [directory]        optional directory name (defaults to repo name)',
     )
     .action(async (url: string, directory?: string) => {
+      const { cloneRepo } = await import('./commands/worktree.js');
       await cloneRepo(url, directory);
     });
 
@@ -286,6 +262,7 @@ export function createProgram(): Command {
     .argument('[subcommand]', 'subcommand: pop, list, drop, apply')
     .argument('[index]', 'stash index for drop/apply (e.g., 0)')
     .action(async (subcommand?: string, index?: string) => {
+      const { handleStash } = await import('./commands/stash.js');
       await handleStash(subcommand, index);
     });
 
@@ -296,6 +273,7 @@ export function createProgram(): Command {
     .command('update')
     .description('update omg to the latest version from npm')
     .action(async () => {
+      const { updateOmg } = await import('./commands/automation.js');
       await updateOmg();
     });
 
@@ -310,6 +288,7 @@ export function createProgram(): Command {
     )
     .option('-m, --message <msg>', 'create initial commit with message')
     .action(async (directory?: string, options?: { message?: string }) => {
+      const { initRepo } = await import('./commands/worktree.js');
       await initRepo(directory ?? '.', options?.message);
     });
 
@@ -326,6 +305,7 @@ export function createProgram(): Command {
     )
     .option('-m, --message <msg>', 'annotated tag message')
     .action(async (name?: string, options?: { message?: string }) => {
+      const { createTag, listTags } = await import('./commands/history.js');
       if (name) {
         await createTag(name, options?.message);
       } else {
@@ -344,6 +324,7 @@ export function createProgram(): Command {
       '  <remote>           fetch from specific remote',
     )
     .action(async (remote?: string) => {
+      const { fetchChanges } = await import('./commands/worktree.js');
       await fetchChanges(remote);
     });
 
@@ -361,6 +342,7 @@ export function createProgram(): Command {
     .option('--soft', 'keep changes staged')
     .option('--hard', 'discard all changes')
     .action(async (mode?: string, options?: { soft?: boolean; hard?: boolean }) => {
+      const { resetChanges } = await import('./commands/worktree.js');
       let resetMode: 'soft' | 'mixed' | 'hard' = 'mixed';
       if (options?.soft) resetMode = 'soft';
       if (options?.hard) resetMode = 'hard';
@@ -379,6 +361,7 @@ export function createProgram(): Command {
     )
     .option('--continue', 'continue after resolving conflicts')
     .action(async (commit: string, options?: { continue?: boolean }) => {
+      const { continueRevert, revertCommit } = await import('./commands/history.js');
       if (options?.continue) {
         await continueRevert();
       } else {
@@ -398,6 +381,7 @@ export function createProgram(): Command {
     )
     .option('--continue', 'continue after resolving conflicts')
     .action(async (commit: string, options?: { continue?: boolean }) => {
+      const { cherryPickCommit, continueCherryPick } = await import('./commands/history.js');
       if (options?.continue) {
         await continueCherryPick();
       } else {
@@ -416,6 +400,7 @@ export function createProgram(): Command {
       '  [value]               set value (if omitted, shows current value)',
     )
     .action(async (key: string, value?: string) => {
+      const { getConfig, setConfig } = await import('./commands/worktree.js');
       if (value !== undefined) {
         await setConfig(key, value);
       } else {
@@ -430,6 +415,7 @@ export function createProgram(): Command {
     .command('social')
     .description('show repository collaborator statistics with humorous commentary')
     .action(async () => {
+      const { showSocialStats } = await import('./commands/social.js');
       await showSocialStats();
     });
 
@@ -443,6 +429,7 @@ export function createProgram(): Command {
     .option('--no-rebase', 'merge instead of rebase when behind')
     .option('-n, --dry-run', 'show what would happen without doing it')
     .action(async (message?: string, options?: { rebase?: boolean; dryRun?: boolean }) => {
+      const { shipChanges } = await import('./commands/automation.js');
       await shipChanges(message, options?.rebase ?? true, options?.dryRun ?? false);
     });
 
@@ -462,6 +449,7 @@ export function createProgram(): Command {
     .argument('[action]', 'recovery action')
     .argument('[file]', 'file for unadd action')
     .action(async (action?: string, file?: string) => {
+      const { handleOops } = await import('./commands/recovery.js');
       await handleOops(action, file);
     });
 
@@ -475,6 +463,7 @@ export function createProgram(): Command {
     )
     .option('-b, --branch <name>', 'base branch to sync from (default: main)', 'main')
     .action(async (options: { branch: string }) => {
+      const { syncWorkspace } = await import('./commands/automation.js');
       await syncWorkspace(options.branch);
     });
 
@@ -486,6 +475,7 @@ export function createProgram(): Command {
     .description('check repository health and catch common issues')
     .option('--fix', 'attempt to auto-fix issues where safe')
     .action(async (options: { fix?: boolean }) => {
+      const { runDoctor } = await import('./commands/automation.js');
       await runDoctor(options.fix ?? false);
     });
 
@@ -500,6 +490,7 @@ export function createProgram(): Command {
     .option('-L, --line <number>', 'show blame for specific line only')
     .option('-s, --stats', 'show author statistics instead of line-by-line')
     .action(async (file: string, options: { line?: string; stats?: boolean }) => {
+      const { showBlame } = await import('./commands/history.js');
       await showBlame(file, options.line ? parseInt(options.line, 10) : undefined, options.stats ?? false);
     });
 

@@ -410,38 +410,6 @@ npm link
 omg --help
 ```
 
-### Source layout
-
-The published binary still points at `dist/index.js`, but the source is split by responsibility so new commands do not have to live in one giant entrypoint:
-
-```text
-src/index.ts              # tiny executable entrypoint
-src/cli.ts                # commander setup, options, and command registration
-src/git.ts                # shared simple-git instance
-src/version.ts            # package version loader
-src/errors.ts             # friendly error mapping and verbose-mode handling
-src/validation.ts         # shared argument/config validation
-src/quips.ts              # spinner one-liners
-src/commands/*.ts         # command implementations grouped by domain
-```
-
-Command modules are grouped by behavior:
-
-```text
-branch.ts       branch list/create/delete
-remote.ts       remote list/add
-worktree.ts     checkout, commit, status, log, diff, clone, init, fetch, reset, config
-history.ts      merge, rebase, revert, cherry-pick, tag, blame
-stash.ts        stash save/pop/list/drop/apply
-automation.ts   update, ship, sync, doctor
-recovery.ts     oops recovery helpers
-social.ts       contributor stats
-```
-
-When adding a command, wire the commander definition in `src/cli.ts`, put the command body in the closest `src/commands/` module, and use NodeNext-style relative imports with `.js` extensions.
-
----
-
 ## Philosophy
 
 > "Git is a tool that lets you confidently delete code on Monday, regret it on Tuesday, and find it again on Wednesday. `omg` just makes the emotional rollercoaster more bearable."

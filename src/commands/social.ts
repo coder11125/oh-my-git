@@ -4,34 +4,52 @@ import { git } from '../git.js';
 import { handleNerdError } from '../errors.js';
 import { quipSpinnerText } from '../quips.js';
 
+/** Parse `git shortlog -sn` lines: leading spaces, count, tab, author name. */
+function parseShortlog(output: string): { author: string; count: number }[] {
+  const result: { author: string; count: number }[] = [];
+  for (const line of output.split('\n')) {
+    if (!line.trim()) continue;
+    const tab = line.indexOf('\t');
+    if (tab === -1) continue;
+    const count = parseInt(line.slice(0, tab).trim(), 10);
+    const author = line.slice(tab + 1).trim();
+    if (!author || Number.isNaN(count)) continue;
+    result.push({ author, count });
+  }
+  return result;
+}
+
 export async function showSocialStats(): Promise<void> {
   const spinner = ora(quipSpinnerText('social', 'Analyzing contributor data')).start();
 
   try {
-    // Fetch all commits
-    const log = await git.log({ maxCount: 10000 });
+    const [shortlogOut, countOut] = await Promise.all([
+      git.raw(['shortlog', '-sn', 'HEAD']),
+      git.raw(['rev-list', '--count', 'HEAD']),
+    ]);
     spinner.stop();
 
-    if (!log || log.total === 0) {
+    const totalCommits = parseInt(String(countOut).trim(), 10);
+    if (!Number.isFinite(totalCommits) || totalCommits <= 0) {
       console.log(chalk.yellow('\nNo commits found. Time to be the first hero!\n'));
       return;
     }
 
-    // Count commits per author
-    const authorStats = new Map<string, number>();
-    for (const commit of log.all) {
-      const author = commit.author_name || 'Unknown';
-      authorStats.set(author, (authorStats.get(author) || 0) + 1);
-    }
+    const contributors = parseShortlog(shortlogOut).map((row) => ({
+      author: row.author,
+      count: row.count,
+      percentage: ((row.count / totalCommits) * 100).toFixed(1),
+    }));
 
-    const totalCommits = log.total;
-    const contributors = Array.from(authorStats.entries())
-      .map(([author, count]) => ({
-        author,
-        count,
-        percentage: ((count / totalCommits) * 100).toFixed(1),
-      }))
-      .sort((a, b) => b.count - a.count);
+    if (contributors.length === 0) {
+      if (totalCommits > 0) {
+        console.log(chalk.bold('\n🎉 Social Scene\n'));
+        console.log(chalk.dim(`Total commits: ${totalCommits} (contributor breakdown unavailable)\n`));
+        return;
+      }
+      console.log(chalk.yellow('\nNo commits found. Time to be the first hero!\n'));
+      return;
+    }
 
     console.log(chalk.bold('\n🎉 Social Scene\n'));
     console.log(chalk.dim(`Contributors: ${contributors.length} human${contributors.length !== 1 ? 's' : ''}\n`));
@@ -57,7 +75,7 @@ export async function showSocialStats(): Promise<void> {
       console.log(
         `  ${icon} ${chalk.white(authorPadded)} ` +
         `${chalk.yellow(stat.count.toString().padStart(4))} commits ` +
-        `${chalk.dim(`(${stat.percentage}%)`)}${suffix}`
+        `${chalk.dim(`(${stat.percentage}%)`)}${suffix}`,
       );
     }
 

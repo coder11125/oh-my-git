@@ -90,8 +90,10 @@ interface ShipStatus {
 }
 
 async function getShipStatus(): Promise<ShipStatus> {
-  const status = await git.status();
-  const remotes = await git.getRemotes(true);
+  const [status, remotes] = await Promise.all([
+    git.status(),
+    git.getRemotes(true),
+  ]);
   const remoteUrl = remotes.length > 0 ? (remotes[0].refs.fetch || remotes[0].refs.push) : null;
 
   return {
@@ -276,9 +278,10 @@ export async function syncWorkspace(baseBranch: string): Promise<void> {
 
   // Step 1: Get current branch and check status
   const checkSpinner = ora(quipSpinnerText('sync_check', 'Checking repository state')).start();
+  let initialStatus: Awaited<ReturnType<typeof git.status>>;
   try {
-    const status = await git.status();
-    state.originalBranch = status.current ?? 'HEAD';
+    initialStatus = await git.status();
+    state.originalBranch = initialStatus.current ?? 'HEAD';
 
     // Check if on a branch (not detached HEAD)
     if (state.originalBranch === 'HEAD') {
@@ -303,10 +306,9 @@ export async function syncWorkspace(baseBranch: string): Promise<void> {
     return;
   }
 
-  // Step 2: Stash if needed (check again after initial status check)
-  const currentStatus = await git.status();
-  const hasChanges = currentStatus.modified.length > 0 || currentStatus.deleted.length > 0 ||
-                     currentStatus.not_added.length > 0 || currentStatus.staged.length > 0;
+  // Step 2: Stash if needed (reuse initial status — avoids a second git status round-trip)
+  const hasChanges = initialStatus.modified.length > 0 || initialStatus.deleted.length > 0 ||
+                     initialStatus.not_added.length > 0 || initialStatus.staged.length > 0;
 
   if (hasChanges) {
     const stashSpinner = ora(quipSpinnerText('sync_stash', 'Stashing local changes')).start();
@@ -449,8 +451,16 @@ export async function runDoctor(autoFix: boolean): Promise<void> {
   const spinner = ora(quipSpinnerText('doctor_analyze', 'Analyzing repository')).start();
 
   try {
+    const [status, remotes, mergeHead, stashListRaw, recentFiles, gitDirOut] = await Promise.all([
+      git.status(),
+      git.getRemotes(),
+      git.raw(['rev-parse', '--quiet', '--verify', 'MERGE_HEAD']).catch(() => ''),
+      git.stash(['list']).catch(() => ''),
+      git.raw(['diff-tree', '-r', '--name-only', '--no-commit-id', 'HEAD']).catch(() => ''),
+      git.raw(['rev-parse', '--git-dir']).catch(() => ''),
+    ]);
+
     // Check 1: Uncommitted changes
-    const status = await git.status();
     if (status.modified.length > 0 || status.deleted.length > 0 || status.not_added.length > 0) {
       issues.push({
         severity: 'warning',
@@ -501,7 +511,6 @@ export async function runDoctor(autoFix: boolean): Promise<void> {
     }
 
     // Check 5: No remote configured
-    const remotes = await git.getRemotes();
     if (remotes.length === 0) {
       issues.push({
         severity: 'error',
@@ -511,17 +520,12 @@ export async function runDoctor(autoFix: boolean): Promise<void> {
     }
 
     // Check 6: Merge in progress
-    try {
-      const mergeHead = await git.raw(['rev-parse', '--quiet', '--verify', 'MERGE_HEAD']);
-      if (mergeHead) {
-        issues.push({
-          severity: 'error',
-          message: 'Merge in progress (unresolved conflicts?)',
-          fixable: false,
-        });
-      }
-    } catch {
-      // No merge in progress, that's fine
+    if (mergeHead.trim()) {
+      issues.push({
+        severity: 'error',
+        message: 'Merge in progress (unresolved conflicts?)',
+        fixable: false,
+      });
     }
 
     // Check 7: Rebase in progress (simplified check using git status)
@@ -529,10 +533,9 @@ export async function runDoctor(autoFix: boolean): Promise<void> {
       // Check if we're in a rebase by looking for .git/rebase-merge or .git/rebase-apply
       try {
         const { existsSync } = await import('fs');
-        const { join, dirname } = await import('path');
-        const gitDir = await git.raw(['rev-parse', '--git-dir']);
-        const gitDirPath = gitDir.trim();
-        if (existsSync(join(gitDirPath, 'rebase-merge')) || existsSync(join(gitDirPath, 'rebase-apply'))) {
+        const { join } = await import('path');
+        const gitDirPath = gitDirOut.trim();
+        if (gitDirPath && (existsSync(join(gitDirPath, 'rebase-merge')) || existsSync(join(gitDirPath, 'rebase-apply')))) {
           issues.push({
             severity: 'error',
             message: 'Rebase in progress',
@@ -554,36 +557,26 @@ export async function runDoctor(autoFix: boolean): Promise<void> {
     }
 
     // Check 9: Large files in recent commits
-    try {
-      const recentFiles = await git.raw(['diff-tree', '-r', '--name-only', '--no-commit-id', 'HEAD']);
-      if (recentFiles) {
-        const files = recentFiles.split('\n').filter(f => f.trim());
-        // This is a simplified check - real implementation would check file sizes
-        if (files.some(f => f.match(/\.(zip|tar|gz|exe|dll|so|dylib)$/i))) {
-          issues.push({
-            severity: 'warning',
-            message: 'Binary files detected in recent commit (consider git-lfs)',
-            fixable: false,
-          });
-        }
-      }
-    } catch {
-      // Can't check, ignore
-    }
-
-    // Check 10: Old stashes
-    try {
-      const stashList = await git.stash(['list']);
-      const stashCount = stashList.split('\n').filter(l => l.trim()).length;
-      if (stashCount > 5) {
+    if (recentFiles.trim()) {
+      const files = recentFiles.split('\n').filter(f => f.trim());
+      // This is a simplified check - real implementation would check file sizes
+      if (files.some(f => f.match(/\.(zip|tar|gz|exe|dll|so|dylib)$/i))) {
         issues.push({
           severity: 'warning',
-          message: `${stashCount} stashes accumulating (consider cleaning up)`,
+          message: 'Binary files detected in recent commit (consider git-lfs)',
           fixable: false,
         });
       }
-    } catch {
-      // Can't check stashes
+    }
+
+    // Check 10: Old stashes
+    const stashCount = stashListRaw.split('\n').filter(l => l.trim()).length;
+    if (stashCount > 5) {
+      issues.push({
+        severity: 'warning',
+        message: `${stashCount} stashes accumulating (consider cleaning up)`,
+        fixable: false,
+      });
     }
 
     spinner.succeed('Health check complete');
