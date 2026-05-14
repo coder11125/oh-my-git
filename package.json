@@ -1,6 +1,6 @@
 {
   "name": "@coder11125/omg",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Oh My Git - a friendly CLI wrapper for common git tasks",
   "type": "module",
   "bin": {
@@ -37,6 +37,15 @@
     "cli",
     "omg",
     "oh-my-git",
+    "git-wrapper",
+    "git-cli",
+    "productivity",
+    "developer-tools",
+    "git-helper",
+    "workflow",
+    "terminal",
+    "vcs",
+    "friendly-git",
     "commander",
     "simple-git"
   ],

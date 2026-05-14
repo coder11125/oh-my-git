@@ -62,6 +62,7 @@ export type QuipCategory =
   | 'tag_list'
   | 'update_check'
   | 'update_run'
+  | 'visualize'
   | 'checkout';
 
 const QUIPS: Record<QuipCategory, readonly string[]> = {
@@ -477,6 +478,13 @@ const QUIPS: Record<QuipCategory, readonly string[]> = {
     'Heatmap of regret lines',
     'Who touched it last',
     'Assigning credit and blame',
+  ],
+  visualize: [
+    'Painting the multiverse tree',
+    'Rendering the spaghetti of time',
+    'Drawing branch geometry',
+    'Visualizing your parallel regrets',
+    'Mapping the chaos graph',
   ],
 };
 

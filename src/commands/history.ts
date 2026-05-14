@@ -355,3 +355,70 @@ function showBlameStats(entries: BlameEntry[], file: string): void {
 
   console.log('');
 }
+
+export async function showVisualHistory(): Promise<void> {
+  const spinner = ora(quipSpinnerText('visualize', 'Mapping the multiverse graph')).start();
+
+  try {
+    // We use a custom format with a unique delimiter so we can stylize 
+    // the graph without corrupting branch names or commit messages.
+    // Using %d gives us the parentheses around decorations.
+    const SEP = '||OMG_SEP||';
+    const output = await git.raw([
+      'log',
+      '--graph',
+      '--all',
+      `--format=${SEP}%h %s %d`,
+      '--color=always',
+      '-n',
+      '30',
+    ]);
+    spinner.stop();
+
+    console.log(chalk.bold('\n--- Repository Multiverse ---\n'));
+    
+    if (!output || output.trim() === '') {
+      console.log(chalk.yellow('No history found.'));
+    } else {
+      const lines = output.split('\n');
+      for (const line of lines) {
+        if (!line.trim()) continue;
+
+        if (line.includes(SEP)) {
+          const [graph, content] = line.split(SEP);
+          
+          // 1. Stylize ONLY the graph part
+          const stylizedGraph = graph
+            .replace(/\*/g, '●')
+            .replace(/\|/g, '│')
+            .replace(/\//g, '╱')
+            .replace(/\\/g, '╲')
+            .replace(/_/g, '─');
+
+          // 2. Sanitize content while preserving ANSI colors
+          // We manually escape control characters EXCEPT the escape char (0x1b)
+          // to keep the colors provided by git --color=always.
+          const safeContent = (content || '').replace(/[\u0000-\u001a\u001c-\u001f\u007f-\u009f]/g, (char) => {
+            const code = char.charCodeAt(0);
+            return `\\x${code.toString(16).padStart(2, '0')}`;
+          });
+          
+          console.log(`${stylizedGraph}${safeContent}`);
+        } else {
+          // Lines without the separator are pure graph lines (branch connections)
+          const stylizedGraph = line
+            .replace(/\|/g, '│')
+            .replace(/\//g, '╱')
+            .replace(/\\/g, '╲')
+            .replace(/_/g, '─');
+          console.log(stylizedGraph);
+        }
+      }
+    }
+    console.log('');
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to visualize history'));
+    handleNerdError(err);
+    process.exitCode = 1;
+  }
+}

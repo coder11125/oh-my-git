@@ -53,6 +53,17 @@ export function createProgram(): Command {
     }
   });
 
+  // Hook to display a star request after any command finishes
+  program.hook('postAction', (thisCommand) => {
+    // Avoid showing the message for help or version commands to keep them clean
+    const commandName = thisCommand.name();
+    if (commandName && commandName !== 'help' && commandName !== 'version') {
+      console.log(chalk.dim('\n---'));
+      console.log(chalk.yellow('🌟 Star the project on GitHub if it helped you!'));
+      console.log(chalk.dim('   Repo: https://github.com/coder11125/oh-my-git'));
+    }
+  });
+
   // ---------------------------------------------------------------------------
   // branch subcommand
   // ---------------------------------------------------------------------------
@@ -492,6 +503,17 @@ export function createProgram(): Command {
     .action(async (file: string, options: { line?: string; stats?: boolean }) => {
       const { showBlame } = await import('./commands/history.js');
       await showBlame(file, options.line ? parseInt(options.line, 10) : undefined, options.stats ?? false);
+    });
+
+  // ---------------------------------------------------------------------------
+  // visualize subcommand
+  // ---------------------------------------------------------------------------
+  program
+    .command('visualize')
+    .description('show a visual representation of the repository branch tree')
+    .action(async () => {
+      const { showVisualHistory } = await import('./commands/history.js');
+      await showVisualHistory();
     });
 
   return program;

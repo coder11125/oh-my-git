@@ -144,6 +144,16 @@ omg log --oneline            # condensed format (for the lazy)
 omg log -n 5 --oneline       # last 5, one-line (just the highlights)
 ```
 
+### Visualize
+
+See the multiverse of branches in all its glory. Perfect for when you've merged so many things you're not sure which reality you're in anymore:
+
+```bash
+omg visualize                # show a visual branch tree (the spaghetti detector)
+```
+
+> 💡 Use this to see how your feature branches relate to main without needing a PhD in graph theory.
+
 ### Diff
 
 Review changes before committing. Because "I don't know what I changed" is not a valid excuse at standup:
