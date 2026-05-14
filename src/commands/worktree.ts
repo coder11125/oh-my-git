@@ -283,8 +283,10 @@ function sanitizeDirName(name: string): string {
 }
 
 export async function cloneRepo(url: string, directory?: string): Promise<void> {
+  validateNotFlag(url, 'clone URL');
   const rawDir = directory || url.split('/').pop()?.replace('.git', '') || 'repo';
   const targetDir = sanitizeDirName(rawDir);
+  validateNotFlag(targetDir, 'target directory');
   const safeTargetDir = sanitizeForTerminal(targetDir);
   const spinner = ora(quipSpinnerText('clone', `Cloning into ${chalk.cyan(safeTargetDir)}`)).start();
 
@@ -302,6 +304,9 @@ export async function cloneRepo(url: string, directory?: string): Promise<void> 
 // ---------------------------------------------------------------------------
 
 export async function initRepo(directory: string, message?: string): Promise<void> {
+  if (directory !== '.') {
+    validateNotFlag(directory, 'directory');
+  }
   const safeDirectory = sanitizeForTerminal(directory);
   const spinner = ora(quipSpinnerText('init', `Initializing git repository in ${chalk.cyan(safeDirectory)}`)).start();
 

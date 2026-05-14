@@ -276,7 +276,10 @@ interface SyncState {
   stashMessage: string;
 }
 
+import { validateNotFlag } from '../validation.js';
+
 export async function syncWorkspace(baseBranch: string): Promise<void> {
+  validateNotFlag(baseBranch, 'base branch');
   console.log(chalk.bold('\n🔄  Syncing workspace...\n'));
 
   const state: SyncState = {
