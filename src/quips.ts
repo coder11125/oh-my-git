@@ -45,6 +45,7 @@ export type QuipCategory =
   | 'ship_rebase'
   | 'ship_stage'
   | 'social'
+  | 'whois'
   | 'stash'
   | 'stash_apply'
   | 'stash_drop'
@@ -471,6 +472,13 @@ const QUIPS: Record<QuipCategory, readonly string[]> = {
     'Quantifying collaboration vibes',
     'Who carried the team',
     'Passive-aggressive leaderboard prep',
+  ],
+  whois: [
+    'Digging up someone commit trail',
+    'Stalking git history (professionally)',
+    'Tracking down a digital footprint',
+    'Who left all these commits lying around',
+    'Investigating suspect SHA patterns',
   ],
   blame: [
     'Finding who to send flowers',

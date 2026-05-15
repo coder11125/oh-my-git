@@ -20,6 +20,105 @@ function parseShortlog(output: string): { author: string; count: number }[] {
   return result;
 }
 
+/** Find authors whose name contains the search term (case-insensitive). */
+async function findAuthors(searchTerm: string): Promise<{ author: string; count: number }[]> {
+  const shortlogOut = await git.raw(['shortlog', '-sn', 'HEAD']);
+  return parseShortlog(shortlogOut).filter((entry) =>
+    entry.author.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+}
+
+export async function showWhois(username: string): Promise<void> {
+  const spinner = ora(quipSpinnerText('whois', `Searching for "${username}" in commit history`)).start();
+
+  try {
+    const matches = await findAuthors(username);
+
+    if (matches.length === 0) {
+      spinner.stop();
+      console.log(chalk.yellow(`\n🕵️ No commits found matching "${username}"\n`));
+      console.log(chalk.dim('Try a different name or check `omg social` to see all contributors.\n'));
+      return;
+    }
+
+    if (matches.length > 1) {
+      spinner.stop();
+      console.log(chalk.bold(`\n🔍 Found ${matches.length} matching contributors:\n`));
+      for (const match of matches) {
+        console.log(`  ${chalk.white(sanitizeForTerminal(match.author).padEnd(30))} ${chalk.yellow(`${match.count} commits`)}`);
+      }
+      console.log(chalk.dim('\nUse a more specific name to see detailed stats for one person.\n'));
+      return;
+    }
+
+    const author = matches[0]!.author;
+    const commitCount = matches[0]!.count;
+
+    const [totalCommitsOut, filesOut, firstCommitOut, recentCommitOut, additionsOut, deletionsOut] = await Promise.all([
+      git.raw(['rev-list', '--count', 'HEAD']),
+      git.raw(['log', '--author', author, '--pretty=format:', '--name-only', '--diff-filter=ACDMR']).then((out) =>
+        out.split('\n').filter((line) => line.trim().length > 0),
+      ),
+      git.raw(['log', '--author', author, '--reverse', '--format=%h %s (%ci)', '-1']),
+      git.raw(['log', '--author', author, '--format=%h %s (%ci)', '-1']),
+      git.raw(['log', '--author', author, '--pretty=format:', '--numstat']).then((out) => {
+        let adds = 0;
+        for (const line of out.split('\n')) {
+          if (!line.trim()) continue;
+          const parts = line.split('\t');
+          const num = parseInt(parts[0] ?? '', 10);
+          if (Number.isFinite(num)) adds += num;
+        }
+        return adds;
+      }),
+      git.raw(['log', '--author', author, '--pretty=format:', '--numstat']).then((out) => {
+        let dels = 0;
+        for (const line of out.split('\n')) {
+          if (!line.trim()) continue;
+          const parts = line.split('\t');
+          const num = parseInt(parts[1] ?? '', 10);
+          if (Number.isFinite(num)) dels += num;
+        }
+        return dels;
+      }),
+    ]);
+
+    spinner.stop();
+
+    const totalCommits = parseInt(String(totalCommitsOut).trim(), 10);
+    const percentage = totalCommits > 0 ? ((commitCount / totalCommits) * 100).toFixed(1) : '0';
+    const uniqueFiles = new Set(filesOut.map((f) => f.trim())).size;
+
+    const firstCommit = String(firstCommitOut).trim();
+    const recentCommit = String(recentCommitOut).trim();
+
+    console.log(chalk.bold(`\n🕵️ Dossier: ${sanitizeForTerminal(author)}\n`));
+    console.log(chalk.dim(`  Commits:      ${chalk.yellow(commitCount)} of ${totalCommits} (${percentage}%)`));
+    console.log(chalk.dim(`  Files touched: ${chalk.cyan(uniqueFiles)}`));
+    console.log(chalk.dim(`  Lines added:   ${chalk.green(`+${additionsOut}`)}`));
+    console.log(chalk.dim(`  Lines deleted: ${chalk.red(`-${deletionsOut}`)}`));
+    console.log('');
+
+    console.log(chalk.dim(`  First commit:  ${sanitizeForTerminal(firstCommit)}`));
+    console.log(chalk.dim(`  Latest commit: ${sanitizeForTerminal(recentCommit)}`));
+    console.log('');
+
+    if (commitCount === totalCommits) {
+      console.log(chalk.dim('💬 Solo project - this person IS the repository.\n'));
+    } else if (Number.parseFloat(percentage) > 50) {
+      console.log(chalk.dim(`💬 Carrying the team. ${sanitizeForTerminal(author)} is the backbone of this repo.\n`));
+    } else if (Number.parseFloat(percentage) < 5) {
+      console.log(chalk.dim(`💬 Just passing through. ${sanitizeForTerminal(author)} left a small mark.\n`));
+    } else {
+      console.log(chalk.dim(`💬 Solid contributor. ${sanitizeForTerminal(author)} knows their way around.\n`));
+    }
+  } catch (err) {
+    spinner.fail(chalk.red(`Failed to search for "${username}"`));
+    handleNerdError(err);
+    process.exitCode = 1;
+  }
+}
+
 export async function showSocialStats(): Promise<void> {
   const spinner = ora(quipSpinnerText('social', 'Analyzing contributor data')).start();
 

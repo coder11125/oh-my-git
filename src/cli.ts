@@ -430,6 +430,20 @@ export function createProgram(): Command {
       await showSocialStats();
     });
 
+  // ---------------------------------------------------------------------------
+  // whois subcommand
+  // ---------------------------------------------------------------------------
+  program
+    .command('whois <username>')
+    .description(
+      'find commits by a contributor\n' +
+      '  <username>         search term (partial match on author name)',
+    )
+    .action(async (username: string) => {
+      const { showWhois } = await import('./commands/social.js');
+      await showWhois(username);
+    });
+
   program
     .command('ship [message]')
     .description(

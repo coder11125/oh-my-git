@@ -362,6 +362,22 @@ Shows:
 
 > 💡 Perfect for passive-aggressive code reviews or just satisfying your curiosity about who actually owns the codebase.
 
+### Whois
+
+Investigate a specific contributor's footprint in the repository:
+
+```bash
+omg whois <username>         # find commits by author name (partial match)
+```
+
+Shows:
+- Total commits and percentage of repo
+- Files touched, lines added/deleted
+- First and latest commit details
+- Humorous commentary about their contribution level
+
+> 💡 Supports partial matching - `omg whois john` finds "John Doe", "Johnny Smith", etc. Multiple matches shows a summary list.
+
 ### Spinner quips
 
 While `omg` waits on git, loading spinners pick a **random one-liner** from a category that matches what you are doing (push, stash, ship, doctor, and so on). The silly bit is followed by a dim **`·`** and the **real task** so you still know what is happening:
