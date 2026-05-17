@@ -9,9 +9,8 @@ interface CliOptions {
 }
 
 interface BranchOptions {
-  new?: string;
   delete?: string;
-  checkout?: boolean;
+  switch?: boolean;
 }
 
 export function createProgram(): Command {
@@ -68,23 +67,22 @@ export function createProgram(): Command {
   // branch subcommand
   // ---------------------------------------------------------------------------
   program
-    .command('branch')
+    .command('branch [name]')
     .description(
       'list, create, or delete branches\n' +
-      '  (no flags)       list all local branches\n' +
-      '  -n <name>        create a new branch\n' +
-      '  -n <name> -s     create and immediately switch to it\n' +
-      '  -d <name>        delete a branch (must be fully merged)',
+      '  (no args)          list all local branches\n' +
+      '  <name>             create a new branch\n' +
+      '  <name> -s          create and immediately switch to it\n' +
+      '  -d <name>          delete a branch (must be fully merged)',
     )
-    .option('-n, --new <name>', 'create a new branch')
-    .option('-s, --switch', 'switch to the newly created branch (use with -n)')
+    .option('-s, --switch', 'switch to the newly created branch (use with <name>)')
     .option('-d, --delete <name>', 'delete a branch')
-    .action(async (opts: BranchOptions & { switch?: boolean }) => {
+    .action(async (name?: string, opts?: { switch?: boolean; delete?: string }) => {
       const { createBranch, deleteBranch, listBranches } = await import('./commands/branch.js');
-      if (opts.new) {
-        await createBranch(opts.new, opts.switch ?? false);
-      } else if (opts.delete) {
+      if (opts?.delete) {
         await deleteBranch(opts.delete);
+      } else if (name) {
+        await createBranch(name, opts?.switch ?? false);
       } else {
         await listBranches();
       }
@@ -107,6 +105,28 @@ export function createProgram(): Command {
       } else {
         await listRemotes();
       }
+    });
+
+  // ---------------------------------------------------------------------------
+  // checkout subcommand
+  // ---------------------------------------------------------------------------
+  program
+    .command('checkout <branch>')
+    .description('switch to a branch\n  <branch>           branch name to checkout')
+    .action(async (branch: string) => {
+      const { checkoutBranch } = await import('./commands/worktree.js');
+      await checkoutBranch(branch);
+    });
+
+  // ---------------------------------------------------------------------------
+  // commit subcommand
+  // ---------------------------------------------------------------------------
+  program
+    .command('commit <message>')
+    .description('stage all changes and commit\n  <message>          commit message')
+    .action(async (message: string) => {
+      const { stageAndCommit } = await import('./commands/worktree.js');
+      await stageAndCommit(message);
     });
 
   // ---------------------------------------------------------------------------
@@ -215,14 +235,14 @@ export function createProgram(): Command {
     .description(
       'show commit history\n' +
       '  (no flags)         show recent commits\n' +
-      '  -n <number>        limit to N commits\n' +
+      '  --count <number>   limit to N commits\n' +
       '  --oneline          condensed one-line format',
     )
-    .option('-n, --number <count>', 'limit number of commits', '10')
+    .option('--count <count>', 'limit number of commits', '10')
     .option('--oneline', 'show condensed one-line format')
-    .action(async (options: { number: string; oneline?: boolean }) => {
+    .action(async (options: { count: string; oneline?: boolean }) => {
       const { showLog } = await import('./commands/worktree.js');
-      await showLog(parseInt(options.number, 10), options.oneline ?? false);
+      await showLog(parseInt(options.count, 10), options.oneline ?? false);
     });
 
   // ---------------------------------------------------------------------------
@@ -347,16 +367,18 @@ export function createProgram(): Command {
     .description(
       'reset current HEAD to specified state\n' +
       '  (no mode)          unstage files (mixed)\n' +
+      '  soft               keep changes staged\n' +
+      '  hard               discard all changes (dangerous)\n' +
       '  --soft             keep changes staged\n' +
-      '  --hard             discard all changes (dangerous)',
+      '  --hard             discard all changes',
     )
     .option('--soft', 'keep changes staged')
     .option('--hard', 'discard all changes')
     .action(async (mode?: string, options?: { soft?: boolean; hard?: boolean }) => {
       const { resetChanges } = await import('./commands/worktree.js');
       let resetMode: 'soft' | 'mixed' | 'hard' = 'mixed';
-      if (options?.soft) resetMode = 'soft';
-      if (options?.hard) resetMode = 'hard';
+      if (mode === 'soft' || options?.soft) resetMode = 'soft';
+      if (mode === 'hard' || options?.hard) resetMode = 'hard';
       await resetChanges(resetMode);
     });
 
@@ -456,6 +478,47 @@ export function createProgram(): Command {
     .action(async (message?: string, options?: { rebase?: boolean; dryRun?: boolean }) => {
       const { shipChanges } = await import('./commands/automation.js');
       await shipChanges(message, options?.rebase ?? true, options?.dryRun ?? false);
+    });
+
+  // ---------------------------------------------------------------------------
+  // undo subcommand
+  // ---------------------------------------------------------------------------
+  program
+    .command('undo')
+    .description('undo last commit (keep changes staged)')
+    .action(async () => {
+      const { undoLastCommit } = await import('./commands/recovery.js');
+      await undoLastCommit();
+    });
+
+  // ---------------------------------------------------------------------------
+  // unstage subcommand
+  // ---------------------------------------------------------------------------
+  program
+    .command('unstage [file]')
+    .description(
+      'unstage files\n' +
+      '  (no args)          unstage all staged files\n' +
+      '  <file>             unstage specific file',
+    )
+    .action(async (file?: string) => {
+      const { unstageAll, unstageFile } = await import('./commands/recovery.js');
+      if (file) {
+        await unstageFile(file);
+      } else {
+        await unstageAll();
+      }
+    });
+
+  // ---------------------------------------------------------------------------
+  // restore-branch subcommand
+  // ---------------------------------------------------------------------------
+  program
+    .command('restore-branch')
+    .description('recover a deleted branch from reflog')
+    .action(async () => {
+      const { restoreBranch } = await import('./commands/recovery.js');
+      await restoreBranch();
     });
 
   // ---------------------------------------------------------------------------

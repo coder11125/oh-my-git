@@ -5,6 +5,84 @@ import { handleNerdError } from '../errors.js';
 import { sanitizeForTerminal } from '../output.js';
 import { quipSpinnerText } from '../quips.js';
 
+export async function undoLastCommit(): Promise<void> {
+  const spinner = ora(quipSpinnerText('oops_uncommit', 'Undoing last commit')).start();
+  try {
+    await git.reset(['--soft', 'HEAD~1']);
+    spinner.succeed(chalk.green('Last commit undone - changes are staged'));
+    console.log(chalk.dim('  Your changes are preserved and staged. Amend with: omg commit "new message"'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to undo commit'));
+    handleNerdError(err);
+    process.exitCode = 1;
+  }
+}
+
+export async function unstageAll(): Promise<void> {
+  const spinner = ora(quipSpinnerText('oops_unstage_all', 'Unstaging all files')).start();
+  try {
+    await git.reset(['--mixed']);
+    spinner.succeed(chalk.green('All files unstaged'));
+    console.log(chalk.dim('  Your changes are preserved but unstaged'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to unstage'));
+    handleNerdError(err);
+    process.exitCode = 1;
+  }
+}
+
+export async function unstageFile(file: string): Promise<void> {
+  const safeFile = sanitizeForTerminal(file);
+  const spinner = ora(quipSpinnerText('oops_unstage_file', `Unstaging ${chalk.cyan(safeFile)}`)).start();
+  try {
+    await git.reset(['--', file]);
+    spinner.succeed(chalk.green(`Unstaged ${safeFile}`));
+  } catch (err) {
+    spinner.fail(chalk.red(`Failed to unstage '${safeFile}'`));
+    handleNerdError(err);
+    process.exitCode = 1;
+  }
+}
+
+export async function restoreBranch(): Promise<void> {
+  const spinner = ora(quipSpinnerText('oops_restore_branch', 'Checking reflog for deleted branches')).start();
+  try {
+    const reflog = await git.raw(['reflog']);
+    const lines = reflog.split('\n');
+    const deletedBranches: Array<{ sha: string; branch: string }> = [];
+
+    for (const line of lines) {
+      const match = line.match(/checkout: moving from (\S+) to (\S+)/);
+      if (match) {
+        const [, fromBranch, toBranch] = match;
+        if (fromBranch && !deletedBranches.some(b => b.branch === fromBranch)) {
+          const shaMatch = line.match(/^([a-f0-9]+)/);
+          if (shaMatch) {
+            deletedBranches.push({ sha: shaMatch[1], branch: fromBranch });
+          }
+        }
+      }
+    }
+
+    spinner.stop();
+
+    if (deletedBranches.length === 0) {
+      console.log(chalk.yellow('No recently deleted branches found in reflog'));
+      return;
+    }
+
+    console.log(chalk.bold('\nRecently deleted branches:\n'));
+    deletedBranches.slice(0, 10).forEach((b, i) => {
+      console.log(`  ${chalk.cyan(`${i + 1}.`)} ${chalk.white(sanitizeForTerminal(b.branch).padEnd(20))} ${chalk.dim(b.sha.slice(0, 7))}`);
+    });
+    console.log(chalk.dim('\nTo restore: git checkout -b <branch-name> <sha>'));
+  } catch (err) {
+    spinner.fail(chalk.red('Failed to check reflog'));
+    handleNerdError(err);
+    process.exitCode = 1;
+  }
+}
+
 async function showOopsMenu(): Promise<void> {
   console.log(chalk.bold('\n🆘  Oops! What would you like to recover?\n'));
   console.log(chalk.cyan('  1.') + ' Undo last commit (keep changes)');
