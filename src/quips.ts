@@ -64,7 +64,11 @@ export type QuipCategory =
   | 'update_check'
   | 'update_run'
   | 'visualize'
-  | 'checkout';
+  | 'checkout'
+  | 'pr_status'
+  | 'pr_edit'
+  | 'pr_create'
+  | 'pr_browser';
 
 const QUIPS: Record<QuipCategory, readonly string[]> = {
   checkout: [
@@ -493,6 +497,34 @@ const QUIPS: Record<QuipCategory, readonly string[]> = {
     'Drawing branch geometry',
     'Visualizing your parallel regrets',
     'Mapping the chaos graph',
+  ],
+  pr_status: [
+    'Checking if you are PR-ready',
+    'Reading your branch resume',
+    'Scanning for merge-worthy material',
+    'Evaluating your pull potential',
+    'Checking PR prerequisites',
+  ],
+  pr_edit: [
+    'Opening your canvas for greatness',
+    'Launching the description studio',
+    'Preparing your PR manifesto',
+    'Opening editor for storytelling time',
+    'Summoning the markdown muse',
+  ],
+  pr_create: [
+    'Sending your work to the judges',
+    'Launching your contribution',
+    'Submitting for peer review',
+    'Opening the merge request floodgates',
+    'Pushing your code into the spotlight',
+  ],
+  pr_browser: [
+    'Summoning the browser',
+    'Opening the PR portal',
+    'Launching the web interface',
+    'Opening GitHub in a new tab',
+    'Preparing for browser-based PR',
   ],
 };
 

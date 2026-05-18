@@ -593,5 +593,27 @@ export function createProgram(): Command {
       await showVisualHistory();
     });
 
+  // ---------------------------------------------------------------------------
+  // pr subcommand
+  // ---------------------------------------------------------------------------
+  program
+    .command('pr')
+    .description(
+      'create a pull request\n' +
+      '  (no args)          open editor to write PR description\n' +
+      '  -t, --title        PR title (skip editor)\n' +
+      '  -b, --body         PR body (skip editor)\n' +
+      '  -w, --web          open in browser instead of using GitHub CLI\n' +
+      '  --base <branch>    base branch to merge into (default: main)',
+    )
+    .option('-t, --title <title>', 'PR title (skip editor)')
+    .option('-b, --body <body>', 'PR body (skip editor)')
+    .option('-w, --web', 'open in browser instead of using GitHub CLI')
+    .option('--base <branch>', 'base branch to merge into (default: main)', 'main')
+    .action(async (options: { title?: string; body?: string; web?: boolean; base: string }) => {
+      const { createPR } = await import('./commands/pr.js');
+      await createPR(options);
+    });
+
   return program;
 }
